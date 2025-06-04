@@ -348,9 +348,7 @@ Template-driven interactions for the LLM:
    - **Args**: `run ./...`
 
 
-### Testing
-
-**Manual Testing:**
+## Manual Testing
 ```bash
 # Test stdio transport
 echo '{"jsonrpc":"2.0","method":"initialize","id":1}' | go run ./... --transport stdio
