@@ -345,7 +345,7 @@ Template-driven interactions for the LLM:
 3. **Connect to the server:**
    - **Transport**: `stdio`
    - **Command**: `go`
-   - **Args**: `run .`
+   - **Args**: `run ./...`
 
 
 ### Testing
