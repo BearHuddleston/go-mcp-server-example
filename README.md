@@ -350,48 +350,6 @@ Template-driven interactions for the LLM:
 
 ### Testing
 
-The project includes comprehensive test coverage:
-
-```bash
-# Run all tests
-go test ./...
-
-# Run tests with coverage
-go test -cover ./...
-
-# Run only unit tests (skip integration)
-go test -short ./...
-
-# Run integration tests only
-go test -run TestIntegration ./...
-
-# Run tests with race detection
-go test -race ./...
-
-# Use the test script
-./test.sh
-```
-
-**Test Categories:**
-
-- **Unit Tests**: Test individual components in isolation
-  - Configuration validation
-  - Error handling
-  - Server initialization
-  - Tool/Resource/Prompt handlers
-  - Transport creation
-
-- **Integration Tests**: Test full system interactions
-  - HTTP transport with real HTTP requests
-  - End-to-end JSON-RPC message flow
-  - Health checks and error responses
-
-- **Mock Testing**: Uses mock implementations for reliable testing
-  - Mock handlers for testing server logic
-  - Isolated component testing
-
-**Current Coverage**: ~40% of statements
-
 **Manual Testing:**
 ```bash
 # Test stdio transport
