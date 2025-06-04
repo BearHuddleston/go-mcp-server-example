@@ -440,6 +440,7 @@ go run ./... --request-timeout 60s
 - [Model Context Protocol Specification](https://modelcontextprotocol.io/specification/2025-03-26)
 - [MCP Inspector](https://github.com/modelcontextprotocol/inspector)
 - [Go Documentation](https://golang.org/doc/)
+- [Jack Herrington's YouTube video on DIY MCP Server](https://www.youtube.com/watch?v=nTMSyldeVSw)
 
 ## Support
 
