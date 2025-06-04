@@ -1,4 +1,4 @@
-# MCP Coffee Server
+# MCP Server Example (MCP Coffee Shop)
 
 A [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) server implementation in Go that provides coffee shop information through tools, resources, and prompts, following Go project layout best practices.
 
