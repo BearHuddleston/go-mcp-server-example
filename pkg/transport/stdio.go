@@ -19,6 +19,9 @@ type Stdio struct {
 
 // NewStdio creates a new stdio transport
 func NewStdio(cfg *config.Config) *Stdio {
+	if cfg == nil {
+		cfg = config.New()
+	}
 	return &Stdio{config: cfg}
 }
 

@@ -57,6 +57,18 @@ func TestNewStdio(t *testing.T) {
 				}
 			},
 		},
+		{
+			name: "with nil config",
+			cfg:  nil,
+			check: func(t *testing.T, s *Stdio) {
+				if s.config == nil {
+					t.Error("Expected config to be defaulted, got nil")
+				}
+				if s.config.RequestTimeout != 30*time.Second {
+					t.Errorf("Expected default RequestTimeout 30s, got %v", s.config.RequestTimeout)
+				}
+			},
+		},
 	}
 
 	for _, tt := range tests {
@@ -100,6 +112,93 @@ func TestStdio_UsesConfigTimeout(t *testing.T) {
 
 			if stdio.config.RequestTimeout != tt.expectTimeout {
 				t.Errorf("Expected RequestTimeout %v, got %v", tt.expectTimeout, stdio.config.RequestTimeout)
+			}
+		})
+	}
+}
+
+type slowMockServer struct {
+	delay time.Duration
+}
+
+func (m *slowMockServer) Initialize(ctx context.Context) (*mcp.InitializeResponse, error) {
+	return &mcp.InitializeResponse{
+		ProtocolVersion: mcp.ProtocolVersion,
+		Capabilities:    map[string]any{},
+		ServerInfo: mcp.ServerInfo{
+			Name:    "Test Server",
+			Version: "1.0.0",
+		},
+	}, nil
+}
+
+func (m *slowMockServer) HandleRequest(ctx context.Context, req mcp.Request) error {
+	select {
+	case <-time.After(m.delay):
+		sender := ctx.Value(mcp.ResponseSenderKey).(mcp.ResponseSender)
+		response := mcp.Response{
+			JSONRPC: mcp.JSONRPCVersion,
+			ID:      req.ID,
+			Result:  map[string]any{"test": "response"},
+		}
+		return sender.SendResponse(response)
+	case <-ctx.Done():
+		return nil
+	}
+}
+
+func TestStdio_TimeoutApplied(t *testing.T) {
+	tests := []struct {
+		name          string
+		configTimeout time.Duration
+		serverDelay   time.Duration
+		expectTimeout bool
+	}{
+		{
+			name:          "sufficient timeout - no cancellation",
+			configTimeout: 100 * time.Millisecond,
+			serverDelay:   50 * time.Millisecond,
+			expectTimeout: false,
+		},
+		{
+			name:          "insufficient timeout - context cancelled",
+			configTimeout: 50 * time.Millisecond,
+			serverDelay:   200 * time.Millisecond,
+			expectTimeout: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := &config.Config{
+				RequestTimeout: tt.configTimeout,
+			}
+
+			stdio := NewStdio(cfg)
+			slowSrv := &slowMockServer{delay: tt.serverDelay}
+
+			ctx := context.Background()
+			start := time.Now()
+
+			req := `{"jsonrpc":"2.0","id":1,"method":"test"}`
+			err := stdio.handleMessage(ctx, slowSrv, req)
+
+			elapsed := time.Since(start)
+
+			if tt.expectTimeout {
+				if elapsed > tt.configTimeout+10*time.Millisecond {
+					t.Errorf("Expected request to timeout after ~%v, but took %v", tt.configTimeout, elapsed)
+				}
+				if err != nil {
+					t.Errorf("Expected no error (context handles cancellation), got %v", err)
+				}
+			} else {
+				if elapsed < tt.serverDelay {
+					t.Errorf("Expected request to complete after server delay %v, but completed in %v", tt.serverDelay, elapsed)
+				}
+				if err != nil {
+					t.Errorf("Expected no error, got %v", err)
+				}
 			}
 		})
 	}
@@ -191,13 +290,11 @@ func TestStdio_sendParseError(t *testing.T) {
 	tests := []struct {
 		name     string
 		input    string
-		parseErr error
 		checkErr func(*testing.T, error)
 	}{
 		{
-			name:     "valid JSON with ID and real parse error",
-			input:    `{"jsonrpc": "2.0", "id": 123, "method": "test"}`,
-			parseErr: json.Unmarshal([]byte(`invalid`), &struct{}{}),
+			name:  "completely invalid JSON",
+			input: `not json at all`,
 			checkErr: func(t *testing.T, err error) {
 				if err != nil {
 					t.Errorf("Expected no error from sendParseError, got %v", err)
@@ -205,9 +302,8 @@ func TestStdio_sendParseError(t *testing.T) {
 			},
 		},
 		{
-			name:     "completely invalid JSON",
-			input:    `not json at all`,
-			parseErr: json.Unmarshal([]byte(`not json`), &struct{}{}),
+			name:  "malformed JSON with syntax error",
+			input: `{"jsonrpc": "2.0", "id": 123, "method": "test"`,
 			checkErr: func(t *testing.T, err error) {
 				if err != nil {
 					t.Errorf("Expected no error from sendParseError, got %v", err)
@@ -215,9 +311,8 @@ func TestStdio_sendParseError(t *testing.T) {
 			},
 		},
 		{
-			name:     "empty input",
-			input:    "",
-			parseErr: json.Unmarshal([]byte(``), &struct{}{}),
+			name:  "empty input",
+			input: "",
 			checkErr: func(t *testing.T, err error) {
 				if err != nil {
 					t.Errorf("Expected no error from sendParseError, got %v", err)
@@ -233,7 +328,8 @@ func TestStdio_sendParseError(t *testing.T) {
 			}
 			stdio := NewStdio(cfg)
 
-			err := stdio.sendParseError(tt.input, tt.parseErr)
+			parseErr := json.Unmarshal([]byte(tt.input), &struct{}{})
+			err := stdio.sendParseError(tt.input, parseErr)
 
 			tt.checkErr(t, err)
 		})
