@@ -374,6 +374,7 @@ func TestHTTPTransport_corsMiddleware(t *testing.T) {
 
 	t.Run("adds CORS headers", func(t *testing.T) {
 		req := httptest.NewRequest("OPTIONS", "/mcp", nil)
+		req.Header.Set("Origin", "http://localhost:3000")
 		rec := httptest.NewRecorder()
 
 		middleware := transport.corsMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -383,8 +384,8 @@ func TestHTTPTransport_corsMiddleware(t *testing.T) {
 		middleware.ServeHTTP(rec, req)
 
 		origin := rec.Header().Get("Access-Control-Allow-Origin")
-		if origin != "*" {
-			t.Errorf("Expected Access-Control-Allow-Origin '*', got: %s", origin)
+		if origin != "http://localhost:3000" {
+			t.Errorf("Expected Access-Control-Allow-Origin 'http://localhost:3000', got: %s", origin)
 		}
 
 		methods := rec.Header().Get("Access-Control-Allow-Methods")

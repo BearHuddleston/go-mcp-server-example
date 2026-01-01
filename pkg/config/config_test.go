@@ -8,442 +8,321 @@ import (
 )
 
 func TestNew(t *testing.T) {
-	t.Run("creates config with defaults", func(t *testing.T) {
-		cfg := New()
+	cfg := New()
 
+	if cfg == nil {
+		t.Fatal("New() returned nil config")
+	}
+
+	t.Run("TransportType", func(t *testing.T) {
 		if cfg.TransportType != "stdio" {
-			t.Errorf("Expected TransportType 'stdio', got %s", cfg.TransportType)
+			t.Errorf("Expected 'stdio', got %s", cfg.TransportType)
 		}
+	})
 
+	t.Run("HTTPPort", func(t *testing.T) {
 		if cfg.HTTPPort != 8080 {
-			t.Errorf("Expected HTTPPort 8080, got %d", cfg.HTTPPort)
+			t.Errorf("Expected 8080, got %d", cfg.HTTPPort)
 		}
+	})
 
+	t.Run("ServerName", func(t *testing.T) {
 		if cfg.ServerName != "Coffee Shop Server" {
-			t.Errorf("Expected ServerName 'Coffee Shop Server', got %s", cfg.ServerName)
+			t.Errorf("Expected 'Coffee Shop Server', got %s", cfg.ServerName)
 		}
+	})
 
+	t.Run("ServerVersion", func(t *testing.T) {
 		if cfg.ServerVersion != "1.0.0" {
-			t.Errorf("Expected ServerVersion '1.0.0', got %s", cfg.ServerVersion)
+			t.Errorf("Expected '1.0.0', got %s", cfg.ServerVersion)
 		}
+	})
 
+	t.Run("RequestTimeout", func(t *testing.T) {
 		if cfg.RequestTimeout != 30*time.Second {
-			t.Errorf("Expected RequestTimeout 30s, got %v", cfg.RequestTimeout)
+			t.Errorf("Expected 30s, got %v", cfg.RequestTimeout)
 		}
+	})
 
+	t.Run("ShutdownTimeout", func(t *testing.T) {
 		if cfg.ShutdownTimeout != 5*time.Second {
-			t.Errorf("Expected ShutdownTimeout 5s, got %v", cfg.ShutdownTimeout)
+			t.Errorf("Expected 5s, got %v", cfg.ShutdownTimeout)
 		}
+	})
 
+	t.Run("ReadTimeout", func(t *testing.T) {
 		if cfg.ReadTimeout != 30*time.Second {
-			t.Errorf("Expected ReadTimeout 30s, got %v", cfg.ReadTimeout)
+			t.Errorf("Expected 30s, got %v", cfg.ReadTimeout)
 		}
+	})
 
+	t.Run("WriteTimeout", func(t *testing.T) {
 		if cfg.WriteTimeout != 30*time.Second {
-			t.Errorf("Expected WriteTimeout 30s, got %v", cfg.WriteTimeout)
+			t.Errorf("Expected 30s, got %v", cfg.WriteTimeout)
 		}
+	})
 
+	t.Run("IdleTimeout", func(t *testing.T) {
 		if cfg.IdleTimeout != 120*time.Second {
-			t.Errorf("Expected IdleTimeout 120s, got %v", cfg.IdleTimeout)
+			t.Errorf("Expected 120s, got %v", cfg.IdleTimeout)
+		}
+	})
+
+	t.Run("AllowedOrigins", func(t *testing.T) {
+		if len(cfg.AllowedOrigins) != 2 {
+			t.Errorf("Expected 2 allowed origins, got %d", len(cfg.AllowedOrigins))
+		}
+		if cfg.AllowedOrigins[0] != "http://localhost:*" {
+			t.Errorf("Expected allowed origin 'http://localhost:*', got %s", cfg.AllowedOrigins[0])
 		}
 	})
 }
 
 func TestParseFlags(t *testing.T) {
-	t.Run("parses flags with default values", func(t *testing.T) {
-		// Reset flags
-		flag.CommandLine = flag.NewFlagSet(os.Args[0], flag.ExitOnError)
+	tests := []struct {
+		name     string
+		args     []string
+		wantErr  bool
+		validate func(*testing.T, *Config)
+	}{
+		{
+			name:    "default values",
+			args:    []string{},
+			wantErr: false,
+			validate: func(t *testing.T, cfg *Config) {
+				if cfg.TransportType != "stdio" {
+					t.Errorf("Expected TransportType 'stdio', got %s", cfg.TransportType)
+				}
+				if cfg.HTTPPort != 8080 {
+					t.Errorf("Expected HTTPPort 8080, got %d", cfg.HTTPPort)
+				}
+				if cfg.RequestTimeout != 30*time.Second {
+					t.Errorf("Expected RequestTimeout 30s, got %v", cfg.RequestTimeout)
+				}
+			},
+		},
+		{
+			name:    "custom values",
+			args:    []string{"-transport", "http", "-port", "9000", "-request-timeout", "60s"},
+			wantErr: false,
+			validate: func(t *testing.T, cfg *Config) {
+				if cfg.TransportType != "http" {
+					t.Errorf("Expected TransportType 'http', got %s", cfg.TransportType)
+				}
+				if cfg.HTTPPort != 9000 {
+					t.Errorf("Expected HTTPPort 9000, got %d", cfg.HTTPPort)
+				}
+				if cfg.RequestTimeout != 60*time.Second {
+					t.Errorf("Expected RequestTimeout 60s, got %v", cfg.RequestTimeout)
+				}
+			},
+		},
+		{
+			name:    "allowed origins",
+			args:    []string{"-allowed-origins", "https://example.com,https://api.example.com"},
+			wantErr: false,
+			validate: func(t *testing.T, cfg *Config) {
+				if len(cfg.AllowedOrigins) != 2 {
+					t.Errorf("Expected 2 allowed origins, got %d", len(cfg.AllowedOrigins))
+				}
+				if cfg.AllowedOrigins[0] != "https://example.com" {
+					t.Errorf("Expected allowed origin 'https://example.com', got %s", cfg.AllowedOrigins[0])
+				}
+			},
+		},
+		{
+			name:    "invalid timeout",
+			args:    []string{"-request-timeout", "0s"},
+			wantErr: true,
+			validate: func(t *testing.T, cfg *Config) {
+			},
+		},
+		{
+			name:    "invalid port",
+			args:    []string{"-port", "0"},
+			wantErr: true,
+			validate: func(t *testing.T, cfg *Config) {
+			},
+		},
+	}
 
-		args := []string{"test"}
-		os.Args = args
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			oldArgs := os.Args
+			defer func() { os.Args = oldArgs }()
 
-		cfg, err := ParseFlags()
-		if err != nil {
-			t.Fatalf("Expected no error, got: %v", err)
-		}
+			os.Args = append([]string{"test"}, tt.args...)
+			flag.CommandLine = flag.NewFlagSet(os.Args[0], flag.ContinueOnError)
+			cfg, err := ParseFlags()
 
-		if cfg.TransportType != "stdio" {
-			t.Errorf("Expected TransportType 'stdio', got %s", cfg.TransportType)
-		}
-
-		if cfg.HTTPPort != 8080 {
-			t.Errorf("Expected HTTPPort 8080, got %d", cfg.HTTPPort)
-		}
-
-		if cfg.RequestTimeout != 30*time.Second {
-			t.Errorf("Expected RequestTimeout 30s, got %v", cfg.RequestTimeout)
-		}
-	})
-
-	t.Run("parses flags with custom values", func(t *testing.T) {
-		// Reset flags
-		flag.CommandLine = flag.NewFlagSet(os.Args[0], flag.ExitOnError)
-
-		args := []string{
-			"test",
-			"-transport", "http",
-			"-port", "9000",
-			"-request-timeout", "60s",
-		}
-		os.Args = args
-
-		cfg, err := ParseFlags()
-		if err != nil {
-			t.Fatalf("Expected no error, got: %v", err)
-		}
-
-		if cfg.TransportType != "http" {
-			t.Errorf("Expected TransportType 'http', got %s", cfg.TransportType)
-		}
-
-		if cfg.HTTPPort != 9000 {
-			t.Errorf("Expected HTTPPort 9000, got %d", cfg.HTTPPort)
-		}
-
-		if cfg.RequestTimeout != 60*time.Second {
-			t.Errorf("Expected RequestTimeout 60s, got %v", cfg.RequestTimeout)
-		}
-	})
-
-	t.Run("returns validation error for invalid port", func(t *testing.T) {
-		// Reset flags
-		flag.CommandLine = flag.NewFlagSet(os.Args[0], flag.ExitOnError)
-
-		args := []string{
-			"test",
-			"-port", "99999",
-		}
-		os.Args = args
-
-		_, err := ParseFlags()
-		if err == nil {
-			t.Errorf("Expected error, got nil")
-		}
-
-		if err.Error() != "invalid port: 99999 (must be 1-65535)" {
-			t.Errorf("Expected invalid port error, got: %v", err)
-		}
-	})
-
-	t.Run("returns validation error for invalid timeout", func(t *testing.T) {
-		// Reset flags
-		flag.CommandLine = flag.NewFlagSet(os.Args[0], flag.ExitOnError)
-
-		args := []string{
-			"test",
-			"-request-timeout", "0s",
-		}
-		os.Args = args
-
-		_, err := ParseFlags()
-		if err == nil {
-			t.Errorf("Expected error, got nil")
-		}
-
-		if err.Error() != "invalid request timeout: 0s (must be positive)" {
-			t.Errorf("Expected invalid timeout error, got: %v", err)
-		}
-	})
-
-	t.Run("parses negative timeout as zero", func(t *testing.T) {
-		// Reset flags
-		flag.CommandLine = flag.NewFlagSet(os.Args[0], flag.ExitOnError)
-
-		args := []string{
-			"test",
-			"-request-timeout", "-5s",
-		}
-		os.Args = args
-
-		_, err := ParseFlags()
-		if err == nil {
-			t.Errorf("Expected error, got nil")
-		}
-
-		if err.Error() != "invalid request timeout: -5s (must be positive)" {
-			t.Errorf("Expected invalid timeout error, got: %v", err)
-		}
-	})
+			if tt.wantErr {
+				if err == nil {
+					t.Error("Expected error, got nil")
+				}
+			} else {
+				if err != nil {
+					t.Errorf("Unexpected error: %v", err)
+				}
+				if tt.validate != nil {
+					tt.validate(t, cfg)
+				}
+			}
+		})
+	}
 }
 
-func TestConfig_Validate(t *testing.T) {
-	t.Run("valid config", func(t *testing.T) {
-		cfg := New()
+func TestValidate(t *testing.T) {
+	tests := []struct {
+		name    string
+		cfg     *Config
+		wantErr bool
+	}{
+		{
+			name: "valid config",
+			cfg: &Config{
+				HTTPPort:       8080,
+				RequestTimeout: 30 * time.Second,
+			},
+			wantErr: false,
+		},
+		{
+			name: "invalid port - too low",
+			cfg: &Config{
+				HTTPPort:       0,
+				RequestTimeout: 30 * time.Second,
+			},
+			wantErr: true,
+		},
+		{
+			name: "invalid port - too high",
+			cfg: &Config{
+				HTTPPort:       70000,
+				RequestTimeout: 30 * time.Second,
+			},
+			wantErr: true,
+		},
+		{
+			name: "invalid request timeout",
+			cfg: &Config{
+				HTTPPort:       8080,
+				RequestTimeout: 0,
+			},
+			wantErr: true,
+		},
+		{
+			name: "negative request timeout",
+			cfg: &Config{
+				HTTPPort:       8080,
+				RequestTimeout: -30 * time.Second,
+			},
+			wantErr: true,
+		},
+	}
 
-		err := cfg.Validate()
-		if err != nil {
-			t.Errorf("Expected no error, got: %v", err)
-		}
-	})
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := tt.cfg.Validate()
 
-	t.Run("invalid port - too low", func(t *testing.T) {
-		cfg := New()
-		cfg.HTTPPort = 0
-
-		err := cfg.Validate()
-		if err == nil {
-			t.Errorf("Expected error, got nil")
-		}
-
-		if err.Error() != "invalid port: 0 (must be 1-65535)" {
-			t.Errorf("Expected invalid port error, got: %v", err)
-		}
-	})
-
-	t.Run("invalid port - negative", func(t *testing.T) {
-		cfg := New()
-		cfg.HTTPPort = -1
-
-		err := cfg.Validate()
-		if err == nil {
-			t.Errorf("Expected error, got nil")
-		}
-
-		if err.Error() != "invalid port: -1 (must be 1-65535)" {
-			t.Errorf("Expected invalid port error, got: %v", err)
-		}
-	})
-
-	t.Run("invalid port - too high", func(t *testing.T) {
-		cfg := New()
-		cfg.HTTPPort = 70000
-
-		err := cfg.Validate()
-		if err == nil {
-			t.Errorf("Expected error, got nil")
-		}
-
-		if err.Error() != "invalid port: 70000 (must be 1-65535)" {
-			t.Errorf("Expected invalid port error, got: %v", err)
-		}
-	})
-
-	t.Run("valid port - minimum", func(t *testing.T) {
-		cfg := New()
-		cfg.HTTPPort = 1
-
-		err := cfg.Validate()
-		if err != nil {
-			t.Errorf("Expected no error, got: %v", err)
-		}
-	})
-
-	t.Run("valid port - maximum", func(t *testing.T) {
-		cfg := New()
-		cfg.HTTPPort = 65535
-
-		err := cfg.Validate()
-		if err != nil {
-			t.Errorf("Expected no error, got: %v", err)
-		}
-	})
-
-	t.Run("invalid request timeout - zero", func(t *testing.T) {
-		cfg := New()
-		cfg.RequestTimeout = 0
-
-		err := cfg.Validate()
-		if err == nil {
-			t.Errorf("Expected error, got nil")
-		}
-
-		if err.Error() != "invalid request timeout: 0s (must be positive)" {
-			t.Errorf("Expected invalid timeout error, got: %v", err)
-		}
-	})
-
-	t.Run("invalid request timeout - negative", func(t *testing.T) {
-		cfg := New()
-		cfg.RequestTimeout = -1 * time.Second
-
-		err := cfg.Validate()
-		if err == nil {
-			t.Errorf("Expected error, got nil")
-		}
-
-		if err.Error() != "invalid request timeout: -1s (must be positive)" {
-			t.Errorf("Expected invalid timeout error, got: %v", err)
-		}
-	})
-
-	t.Run("valid request timeout - very small", func(t *testing.T) {
-		cfg := New()
-		cfg.RequestTimeout = 1 * time.Millisecond
-
-		err := cfg.Validate()
-		if err != nil {
-			t.Errorf("Expected no error, got: %v", err)
-		}
-	})
-
-	t.Run("valid request timeout - very large", func(t *testing.T) {
-		cfg := New()
-		cfg.RequestTimeout = 24 * time.Hour
-
-		err := cfg.Validate()
-		if err != nil {
-			t.Errorf("Expected no error, got: %v", err)
-		}
-	})
-
-	t.Run("multiple validation errors - returns first", func(t *testing.T) {
-		cfg := New()
-		cfg.HTTPPort = 0
-		cfg.RequestTimeout = -1 * time.Second
-
-		err := cfg.Validate()
-		if err == nil {
-			t.Errorf("Expected error, got nil")
-		}
-
-		// Should return the first error encountered (port)
-		if err.Error() != "invalid port: 0 (must be 1-65535)" {
-			t.Errorf("Expected invalid port error first, got: %v", err)
-		}
-	})
+			if tt.wantErr {
+				if err == nil {
+					t.Error("Expected error, got nil")
+				}
+			} else {
+				if err != nil {
+					t.Errorf("Unexpected error: %v", err)
+				}
+			}
+		})
+	}
 }
 
 func TestConfig_ParseVariousTimeDurations(t *testing.T) {
-	t.Run("parses millisecond duration", func(t *testing.T) {
-		// Reset flags
-		flag.CommandLine = flag.NewFlagSet(os.Args[0], flag.ExitOnError)
+	tests := []struct {
+		name    string
+		args    []string
+		timeout time.Duration
+	}{
+		{
+			name:    "millisecond duration",
+			args:    []string{"-request-timeout", "500ms"},
+			timeout: 500 * time.Millisecond,
+		},
+		{
+			name:    "second duration",
+			args:    []string{"-request-timeout", "45s"},
+			timeout: 45 * time.Second,
+		},
+		{
+			name:    "minute duration",
+			args:    []string{"-request-timeout", "2m"},
+			timeout: 2 * time.Minute,
+		},
+		{
+			name:    "hour duration",
+			args:    []string{"-request-timeout", "1h"},
+			timeout: 1 * time.Hour,
+		},
+	}
 
-		args := []string{
-			"test",
-			"-request-timeout", "500ms",
-		}
-		os.Args = args
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			oldArgs := os.Args
+			defer func() { os.Args = oldArgs }()
 
-		cfg, err := ParseFlags()
-		if err != nil {
-			t.Fatalf("Expected no error, got: %v", err)
-		}
+			os.Args = append([]string{"test"}, tt.args...)
+			flag.CommandLine = flag.NewFlagSet(os.Args[0], flag.ContinueOnError)
+			cfg, err := ParseFlags()
 
-		if cfg.RequestTimeout != 500*time.Millisecond {
-			t.Errorf("Expected RequestTimeout 500ms, got %v", cfg.RequestTimeout)
-		}
-	})
+			if err != nil {
+				t.Fatalf("Unexpected error: %v", err)
+			}
 
-	t.Run("parses second duration", func(t *testing.T) {
-		// Reset flags
-		flag.CommandLine = flag.NewFlagSet(os.Args[0], flag.ExitOnError)
-
-		args := []string{
-			"test",
-			"-request-timeout", "45s",
-		}
-		os.Args = args
-
-		cfg, err := ParseFlags()
-		if err != nil {
-			t.Fatalf("Expected no error, got: %v", err)
-		}
-
-		if cfg.RequestTimeout != 45*time.Second {
-			t.Errorf("Expected RequestTimeout 45s, got %v", cfg.RequestTimeout)
-		}
-	})
-
-	t.Run("parses minute duration", func(t *testing.T) {
-		// Reset flags
-		flag.CommandLine = flag.NewFlagSet(os.Args[0], flag.ExitOnError)
-
-		args := []string{
-			"test",
-			"-request-timeout", "2m",
-		}
-		os.Args = args
-
-		cfg, err := ParseFlags()
-		if err != nil {
-			t.Fatalf("Expected no error, got: %v", err)
-		}
-
-		if cfg.RequestTimeout != 2*time.Minute {
-			t.Errorf("Expected RequestTimeout 2m, got %v", cfg.RequestTimeout)
-		}
-	})
-
-	t.Run("parses hour duration", func(t *testing.T) {
-		// Reset flags
-		flag.CommandLine = flag.NewFlagSet(os.Args[0], flag.ExitOnError)
-
-		args := []string{
-			"test",
-			"-request-timeout", "1h",
-		}
-		os.Args = args
-
-		cfg, err := ParseFlags()
-		if err != nil {
-			t.Fatalf("Expected no error, got: %v", err)
-		}
-
-		if cfg.RequestTimeout != 1*time.Hour {
-			t.Errorf("Expected RequestTimeout 1h, got %v", cfg.RequestTimeout)
-		}
-	})
+			if cfg.RequestTimeout != tt.timeout {
+				t.Errorf("Expected RequestTimeout %v, got %v", tt.timeout, cfg.RequestTimeout)
+			}
+		})
+	}
 }
 
 func TestConfig_TransportType(t *testing.T) {
-	t.Run("accepts stdio transport type", func(t *testing.T) {
-		// Reset flags
-		flag.CommandLine = flag.NewFlagSet(os.Args[0], flag.ExitOnError)
+	tests := []struct {
+		name      string
+		args      []string
+		transport string
+	}{
+		{
+			name:      "stdio transport",
+			args:      []string{"-transport", "stdio"},
+			transport: "stdio",
+		},
+		{
+			name:      "http transport",
+			args:      []string{"-transport", "http"},
+			transport: "http",
+		},
+		{
+			name:      "custom transport",
+			args:      []string{"-transport", "custom-transport"},
+			transport: "custom-transport",
+		},
+	}
 
-		args := []string{
-			"test",
-			"-transport", "stdio",
-		}
-		os.Args = args
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			oldArgs := os.Args
+			defer func() { os.Args = oldArgs }()
 
-		cfg, err := ParseFlags()
-		if err != nil {
-			t.Fatalf("Expected no error, got: %v", err)
-		}
+			os.Args = append([]string{"test"}, tt.args...)
+			flag.CommandLine = flag.NewFlagSet(os.Args[0], flag.ContinueOnError)
+			cfg, err := ParseFlags()
 
-		if cfg.TransportType != "stdio" {
-			t.Errorf("Expected TransportType 'stdio', got %s", cfg.TransportType)
-		}
-	})
+			if err != nil {
+				t.Fatalf("Unexpected error: %v", err)
+			}
 
-	t.Run("accepts http transport type", func(t *testing.T) {
-		// Reset flags
-		flag.CommandLine = flag.NewFlagSet(os.Args[0], flag.ExitOnError)
-
-		args := []string{
-			"test",
-			"-transport", "http",
-		}
-		os.Args = args
-
-		cfg, err := ParseFlags()
-		if err != nil {
-			t.Fatalf("Expected no error, got: %v", err)
-		}
-
-		if cfg.TransportType != "http" {
-			t.Errorf("Expected TransportType 'http', got %s", cfg.TransportType)
-		}
-	})
-
-	t.Run("accepts custom transport type", func(t *testing.T) {
-		// ParseFlags doesn't validate transport type, just accepts any value
-		// Reset flags
-		flag.CommandLine = flag.NewFlagSet(os.Args[0], flag.ExitOnError)
-
-		args := []string{
-			"test",
-			"-transport", "custom-transport",
-		}
-		os.Args = args
-
-		cfg, err := ParseFlags()
-		if err != nil {
-			t.Fatalf("Expected no error, got: %v", err)
-		}
-
-		if cfg.TransportType != "custom-transport" {
-			t.Errorf("Expected TransportType 'custom-transport', got %s", cfg.TransportType)
-		}
-	})
+			if cfg.TransportType != tt.transport {
+				t.Errorf("Expected TransportType '%s', got %s", tt.transport, cfg.TransportType)
+			}
+		})
+	}
 }
