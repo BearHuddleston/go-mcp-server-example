@@ -1,0 +1,33 @@
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Build
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Test
+*.test
+*.out
+coverage.txt
+coverage.out
+
+# Go
+vendor/
+
+# Local development (not committed)
+.opencode/
+
+# Environment
+.env
+.env.local
+.env.*.local
