@@ -4,6 +4,7 @@ package config
 import (
 	"flag"
 	"fmt"
+	"strings"
 	"time"
 )
 
@@ -22,9 +23,10 @@ type Config struct {
 	ShutdownTimeout time.Duration
 
 	// HTTP settings
-	ReadTimeout  time.Duration
-	WriteTimeout time.Duration
-	IdleTimeout  time.Duration
+	ReadTimeout    time.Duration
+	WriteTimeout   time.Duration
+	IdleTimeout    time.Duration
+	AllowedOrigins []string
 }
 
 // New creates a new configuration with defaults
@@ -39,6 +41,7 @@ func New() *Config {
 		ReadTimeout:     30 * time.Second,
 		WriteTimeout:    30 * time.Second,
 		IdleTimeout:     120 * time.Second,
+		AllowedOrigins:  []string{"http://localhost:*", "http://127.0.0.1:*"},
 	}
 }
 
@@ -49,12 +52,16 @@ func ParseFlags() (*Config, error) {
 	transportType := flag.String("transport", cfg.TransportType, "Transport type: stdio or http")
 	port := flag.Int("port", cfg.HTTPPort, "Port for HTTP transport (ignored for stdio)")
 	requestTimeout := flag.Duration("request-timeout", cfg.RequestTimeout, "Request timeout duration")
+	allowedOrigins := flag.String("allowed-origins", "", "Comma-separated list of allowed CORS origins (e.g., https://example.com,https://api.example.com)")
 
 	flag.Parse()
 
 	cfg.TransportType = *transportType
 	cfg.HTTPPort = *port
 	cfg.RequestTimeout = *requestTimeout
+	if *allowedOrigins != "" {
+		cfg.AllowedOrigins = strings.Split(*allowedOrigins, ",")
+	}
 
 	return cfg, cfg.Validate()
 }
