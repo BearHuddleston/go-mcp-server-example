@@ -19,11 +19,12 @@ import (
 
 // HTTPTransport implements Transport for HTTP with SSE support
 type HTTPTransport struct {
-	port     int
-	server   *http.Server
-	sessions map[string]*SSESession
-	mu       sync.RWMutex
-	config   *config.Config
+	port          int
+	server        *http.Server
+	sessions      map[string]*SSESession
+	mu            sync.RWMutex
+	config        *config.Config
+	originRegexes []*regexp.Regexp
 }
 
 // HTTPResponseSender implements ResponseSender for HTTP responses
@@ -87,11 +88,30 @@ type SSESession struct {
 
 // NewHTTP creates a new HTTP transport
 func NewHTTP(cfg *config.Config) *HTTPTransport {
-	return &HTTPTransport{
+	t := &HTTPTransport{
 		port:     cfg.HTTPPort,
 		sessions: make(map[string]*SSESession),
 		config:   cfg,
 	}
+
+	// Pre-compile regex patterns for origin validation
+	for _, allowed := range cfg.AllowedOrigins {
+		if allowed == "*" {
+			// Wildcard - skip regex, handled separately
+			continue
+		}
+
+		// Support port wildcards (e.g., "http://localhost:*")
+		pattern := "^" + strings.ReplaceAll(allowed, "*", ".*") + "$"
+		re, err := regexp.Compile(pattern)
+		if err != nil {
+			log.Printf("Warning: Invalid origin pattern '%s': %v (skipping)", allowed, err)
+			continue
+		}
+		t.originRegexes = append(t.originRegexes, re)
+	}
+
+	return t
 }
 
 func (t *HTTPTransport) Start(ctx context.Context, server mcp.Server) error {
@@ -420,12 +440,11 @@ func (t *HTTPTransport) isOriginAllowed(origin string) bool {
 		if allowed == "*" {
 			return true
 		}
+	}
 
-		// Support port wildcards (e.g., "http://localhost:*")
-		allowed = strings.ReplaceAll(allowed, "*", ".*")
-
-		// Match origin against pattern
-		if matched, _ := regexp.MatchString("^"+allowed+"$", origin); matched {
+	// Check against pre-compiled regex patterns
+	for _, re := range t.originRegexes {
+		if re.MatchString(origin) {
 			return true
 		}
 	}
