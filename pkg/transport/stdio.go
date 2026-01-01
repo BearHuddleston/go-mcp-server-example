@@ -7,17 +7,22 @@ import (
 	"fmt"
 	"log"
 	"os"
-	"time"
 
+	"github.com/BearHuddleston/mcp-server-example/pkg/config"
 	"github.com/BearHuddleston/mcp-server-example/pkg/mcp"
 )
 
 // Stdio implements the stdio transport for MCP
-type Stdio struct{}
+type Stdio struct {
+	config *config.Config
+}
 
 // NewStdio creates a new stdio transport
-func NewStdio() *Stdio {
-	return &Stdio{}
+func NewStdio(cfg *config.Config) *Stdio {
+	if cfg == nil {
+		cfg = config.New()
+	}
+	return &Stdio{config: cfg}
 }
 
 // Start begins listening on stdin for JSON-RPC messages
@@ -105,7 +110,7 @@ func (t *Stdio) handleMessage(ctx context.Context, server mcp.Server, line strin
 
 	// Add stdout sender to context
 	reqCtx := context.WithValue(ctx, mcp.ResponseSenderKey, &StdoutSender{})
-	reqCtx, cancel := context.WithTimeout(reqCtx, 30*time.Second)
+	reqCtx, cancel := context.WithTimeout(reqCtx, t.config.RequestTimeout)
 	defer cancel()
 
 	return server.HandleRequest(reqCtx, req)

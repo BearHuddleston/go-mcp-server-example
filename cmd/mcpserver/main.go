@@ -87,7 +87,7 @@ func run(cfg *config.Config) error {
 func createTransport(cfg *config.Config) (transport.Transport, error) {
 	switch strings.ToLower(cfg.TransportType) {
 	case "stdio":
-		return transport.NewStdio(), nil
+		return transport.NewStdio(cfg), nil
 	case "http":
 		return transport.NewHTTP(cfg), nil
 	default:
