@@ -1,18 +1,3 @@
-// MCP Coffee Server - A Model Context Protocol server for coffee shop operations
-//
-// This application provides tools, resources, and prompts for a coffee shop
-// through the Model Context Protocol (MCP). It supports both stdio and HTTP
-// transports for integration with various MCP clients.
-//
-// Usage:
-//
-//	mcpserver [flags]
-//
-// Flags:
-//
-//	-transport string: Transport type (stdio|http) (default "stdio")
-//	-port int: HTTP port (default 8080)
-//	-request-timeout duration: Request timeout (default 30s)
 package main
 
 import (
@@ -63,9 +48,9 @@ func execute(parseFlags func() (*config.Config, error), runServer func(*config.C
 
 // run starts and runs the MCP server with the given configuration
 func run(cfg *config.Config) error {
-	coffeeHandler := handlers.NewCoffee()
+	catalogHandler := handlers.NewCatalog()
 
-	mcpServer, err := server.New(cfg, coffeeHandler, coffeeHandler, coffeeHandler)
+	mcpServer, err := server.New(cfg, catalogHandler, catalogHandler, catalogHandler)
 	if err != nil {
 		return fmt.Errorf("failed to create server: %w", err)
 	}

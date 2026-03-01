@@ -27,8 +27,8 @@ func TestNew(t *testing.T) {
 	})
 
 	t.Run("ServerName", func(t *testing.T) {
-		if cfg.ServerName != "Coffee Shop Server" {
-			t.Errorf("Expected 'Coffee Shop Server', got %s", cfg.ServerName)
+		if cfg.ServerName != "MCP Example Server" {
+			t.Errorf("Expected 'MCP Example Server', got %s", cfg.ServerName)
 		}
 	})
 

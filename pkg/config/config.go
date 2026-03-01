@@ -34,7 +34,7 @@ func New() *Config {
 	return &Config{
 		TransportType:   "stdio",
 		HTTPPort:        8080,
-		ServerName:      "Coffee Shop Server",
+		ServerName:      "MCP Example Server",
 		ServerVersion:   "1.0.0",
 		RequestTimeout:  30 * time.Second,
 		ShutdownTimeout: 5 * time.Second,

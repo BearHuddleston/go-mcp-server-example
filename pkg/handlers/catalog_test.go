@@ -8,8 +8,8 @@ import (
 	"github.com/BearHuddleston/mcp-server-example/pkg/mcp"
 )
 
-func TestCoffeeHandler(t *testing.T) {
-	handler := NewCoffee()
+func TestCatalogHandler(t *testing.T) {
+	handler := NewCatalog()
 	ctx := context.Background()
 
 	t.Run("ListTools", func(t *testing.T) {
@@ -22,10 +22,9 @@ func TestCoffeeHandler(t *testing.T) {
 			t.Errorf("Expected 2 tools, got %d", len(tools))
 		}
 
-		// Verify tool names
 		expectedTools := map[string]bool{
-			"getDrinkNames": false,
-			"getDrinkInfo":  false,
+			"listItems":      false,
+			"getItemDetails": false,
 		}
 
 		for _, tool := range tools {
@@ -41,11 +40,8 @@ func TestCoffeeHandler(t *testing.T) {
 		}
 	})
 
-	t.Run("CallTool - getDrinkNames", func(t *testing.T) {
-		params := mcp.ToolCallParams{
-			Name:      "getDrinkNames",
-			Arguments: map[string]any{},
-		}
+	t.Run("CallTool - listItems", func(t *testing.T) {
+		params := mcp.ToolCallParams{Name: "listItems", Arguments: map[string]any{}}
 
 		response, err := handler.CallTool(ctx, params)
 		if err != nil {
@@ -61,10 +57,10 @@ func TestCoffeeHandler(t *testing.T) {
 		}
 	})
 
-	t.Run("CallTool - getDrinkInfo success", func(t *testing.T) {
+	t.Run("CallTool - getItemDetails success", func(t *testing.T) {
 		params := mcp.ToolCallParams{
-			Name:      "getDrinkInfo",
-			Arguments: map[string]any{"name": "Latte"},
+			Name:      "getItemDetails",
+			Arguments: map[string]any{"name": "Workspace Automation Pack"},
 		}
 
 		response, err := handler.CallTool(ctx, params)
@@ -74,8 +70,8 @@ func TestCoffeeHandler(t *testing.T) {
 		if len(response.Content) != 1 {
 			t.Fatalf("Expected 1 content item, got %d", len(response.Content))
 		}
-		if !strings.Contains(response.Content[0].Text, "Latte") {
-			t.Fatalf("Expected response to include Latte, got %s", response.Content[0].Text)
+		if !strings.Contains(response.Content[0].Text, "Workspace Automation Pack") {
+			t.Fatalf("Expected response to include item name, got %s", response.Content[0].Text)
 		}
 	})
 
@@ -86,34 +82,34 @@ func TestCoffeeHandler(t *testing.T) {
 		}
 	})
 
-	t.Run("CallTool - invalid getDrinkInfo args", func(t *testing.T) {
-		_, err := handler.CallTool(ctx, mcp.ToolCallParams{Name: "getDrinkInfo", Arguments: map[string]any{"name": 42}})
+	t.Run("CallTool - invalid getItemDetails args", func(t *testing.T) {
+		_, err := handler.CallTool(ctx, mcp.ToolCallParams{Name: "getItemDetails", Arguments: map[string]any{"name": 42}})
 		if err == nil {
 			t.Fatal("Expected error for invalid name argument")
 		}
 	})
 
-	t.Run("CallTool - missing drink", func(t *testing.T) {
-		_, err := handler.CallTool(ctx, mcp.ToolCallParams{Name: "getDrinkInfo", Arguments: map[string]any{"name": "Unknown"}})
+	t.Run("CallTool - missing item", func(t *testing.T) {
+		_, err := handler.CallTool(ctx, mcp.ToolCallParams{Name: "getItemDetails", Arguments: map[string]any{"name": "Unknown"}})
 		if err == nil {
-			t.Fatal("Expected error for unknown drink")
+			t.Fatal("Expected error for unknown item")
 		}
 	})
 
 	t.Run("CallTool - cancelled context", func(t *testing.T) {
 		cancelledCtx, cancel := context.WithCancel(context.Background())
 		cancel()
-		resp, err := handler.CallTool(cancelledCtx, mcp.ToolCallParams{Name: "getDrinkNames", Arguments: map[string]any{}})
+		resp, err := handler.CallTool(cancelledCtx, mcp.ToolCallParams{Name: "listItems", Arguments: map[string]any{}})
 		if err != nil {
-			t.Fatalf("Expected no error for getDrinkNames cancellation branch, got %v", err)
+			t.Fatalf("Expected no error for listItems cancellation branch, got %v", err)
 		}
-		if len(resp.Content) != 1 || !strings.Contains(resp.Content[0].Text, "Request cancelled") {
+		if len(resp.Content) != 1 || !strings.Contains(resp.Content[0].Text, "request cancelled") {
 			t.Fatalf("Expected cancellation response content, got %+v", resp.Content)
 		}
 
-		_, err = handler.CallTool(cancelledCtx, mcp.ToolCallParams{Name: "getDrinkInfo", Arguments: map[string]any{"name": "Latte"}})
+		_, err = handler.CallTool(cancelledCtx, mcp.ToolCallParams{Name: "getItemDetails", Arguments: map[string]any{"name": "Workspace Automation Pack"}})
 		if err == nil {
-			t.Fatal("Expected context cancellation error for getDrinkInfo")
+			t.Fatal("Expected context cancellation error for getItemDetails")
 		}
 	})
 
@@ -127,13 +123,13 @@ func TestCoffeeHandler(t *testing.T) {
 			t.Errorf("Expected 1 resource, got %d", len(resources))
 		}
 
-		if resources[0].URI != "menu://app" {
-			t.Errorf("Expected URI 'menu://app', got %s", resources[0].URI)
+		if resources[0].URI != "catalog://items" {
+			t.Errorf("Expected URI 'catalog://items', got %s", resources[0].URI)
 		}
 	})
 
 	t.Run("ReadResource success", func(t *testing.T) {
-		resp, err := handler.ReadResource(ctx, mcp.ResourceParams{URI: "menu://app"})
+		resp, err := handler.ReadResource(ctx, mcp.ResourceParams{URI: "catalog://items"})
 		if err != nil {
 			t.Fatalf("ReadResource failed: %v", err)
 		}
@@ -143,7 +139,7 @@ func TestCoffeeHandler(t *testing.T) {
 	})
 
 	t.Run("ReadResource unknown", func(t *testing.T) {
-		_, err := handler.ReadResource(ctx, mcp.ResourceParams{URI: "missing://app"})
+		_, err := handler.ReadResource(ctx, mcp.ResourceParams{URI: "missing://items"})
 		if err == nil {
 			t.Fatal("Expected error for unknown resource")
 		}
@@ -159,25 +155,25 @@ func TestCoffeeHandler(t *testing.T) {
 		}
 
 		recommendation, err := handler.GetPrompt(ctx, mcp.PromptParams{
-			Name:      "drinkRecommendation",
-			Arguments: map[string]any{"budget": 6, "preference": "sweet"},
+			Name:      "planRecommendation",
+			Arguments: map[string]any{"budget": 6, "goal": "speed"},
 		})
 		if err != nil {
-			t.Fatalf("GetPrompt drinkRecommendation failed: %v", err)
+			t.Fatalf("GetPrompt planRecommendation failed: %v", err)
 		}
-		if len(recommendation.Messages) != 1 || !strings.Contains(recommendation.Messages[0].Content.Text, "sweet") {
-			t.Fatalf("Expected recommendation text to include preference, got %+v", recommendation.Messages)
+		if len(recommendation.Messages) != 1 || !strings.Contains(recommendation.Messages[0].Content.Text, "speed") {
+			t.Fatalf("Expected recommendation text to include goal, got %+v", recommendation.Messages)
 		}
 
 		description, err := handler.GetPrompt(ctx, mcp.PromptParams{
-			Name:      "drinkDescription",
+			Name:      "itemBrief",
 			Arguments: map[string]any{},
 		})
 		if err != nil {
-			t.Fatalf("GetPrompt drinkDescription failed: %v", err)
+			t.Fatalf("GetPrompt itemBrief failed: %v", err)
 		}
-		if len(description.Messages) != 1 || !strings.Contains(description.Messages[0].Content.Text, "coffee") {
-			t.Fatalf("Expected default drink name in description prompt, got %+v", description.Messages)
+		if len(description.Messages) != 1 || !strings.Contains(description.Messages[0].Content.Text, "catalog item") {
+			t.Fatalf("Expected default item name in prompt, got %+v", description.Messages)
 		}
 
 		_, err = handler.GetPrompt(ctx, mcp.PromptParams{Name: "unknown", Arguments: map[string]any{}})

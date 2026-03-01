@@ -45,7 +45,7 @@ func (h *testResourceHandler) ListResources(ctx context.Context) ([]mcp.Resource
 	if h.listErr != nil {
 		return nil, h.listErr
 	}
-	return []mcp.Resource{{URI: "menu://app", Name: "menu"}}, nil
+	return []mcp.Resource{{URI: "catalog://items", Name: "catalog"}}, nil
 }
 
 func (h *testResourceHandler) ReadResource(ctx context.Context, params mcp.ResourceParams) (mcp.ResourceResponse, error) {
@@ -152,7 +152,7 @@ func TestHandleRequestDispatchSuccess(t *testing.T) {
 		{JSONRPC: mcp.JSONRPCVersion, Method: "tools/list", ID: 2},
 		{JSONRPC: mcp.JSONRPCVersion, Method: "tools/call", ID: 3, Params: map[string]any{"name": "toolA", "arguments": map[string]any{"k": "v"}}},
 		{JSONRPC: mcp.JSONRPCVersion, Method: "resources/list", ID: 4},
-		{JSONRPC: mcp.JSONRPCVersion, Method: "resources/read", ID: 5, Params: map[string]any{"uri": "menu://app"}},
+		{JSONRPC: mcp.JSONRPCVersion, Method: "resources/read", ID: 5, Params: map[string]any{"uri": "catalog://items"}},
 		{JSONRPC: mcp.JSONRPCVersion, Method: "prompts/list", ID: 6},
 		{JSONRPC: mcp.JSONRPCVersion, Method: "prompts/get", ID: 7, Params: map[string]any{"name": "promptA", "arguments": map[string]any{"k": "v"}}},
 		{JSONRPC: mcp.JSONRPCVersion, Method: "ping", ID: 8},
@@ -172,7 +172,7 @@ func TestHandleRequestDispatchSuccess(t *testing.T) {
 	if tool.last.Name != "toolA" || tool.last.Arguments["k"] != "v" {
 		t.Fatalf("unexpected tool params captured: %+v", tool.last)
 	}
-	if resource.last.URI != "menu://app" {
+	if resource.last.URI != "catalog://items" {
 		t.Fatalf("unexpected resource params captured: %+v", resource.last)
 	}
 	if prompt.last.Name != "promptA" || prompt.last.Arguments["k"] != "v" {
@@ -197,7 +197,7 @@ func TestHandleRequestErrors(t *testing.T) {
 		{name: "unknown method", req: mcp.Request{JSONRPC: mcp.JSONRPCVersion, Method: "nope", ID: 1}, expectCode: mcp.ErrorCodeMethodNotFound},
 		{name: "tools list error", req: mcp.Request{JSONRPC: mcp.JSONRPCVersion, Method: "tools/list", ID: 2}, expectCode: mcp.ErrorCodeInternalError},
 		{name: "tools call bad params", req: mcp.Request{JSONRPC: mcp.JSONRPCVersion, Method: "tools/call", ID: 3, Params: map[string]any{"name": 99}}, expectCode: mcp.ErrorCodeInvalidParams},
-		{name: "resources read error", req: mcp.Request{JSONRPC: mcp.JSONRPCVersion, Method: "resources/read", ID: 4, Params: map[string]any{"uri": "menu://app"}}, expectCode: mcp.ErrorCodeInvalidParams},
+		{name: "resources read error", req: mcp.Request{JSONRPC: mcp.JSONRPCVersion, Method: "resources/read", ID: 4, Params: map[string]any{"uri": "catalog://items"}}, expectCode: mcp.ErrorCodeInvalidParams},
 		{name: "prompts get error", req: mcp.Request{JSONRPC: mcp.JSONRPCVersion, Method: "prompts/get", ID: 5, Params: map[string]any{"name": "promptA"}}, expectCode: mcp.ErrorCodeInvalidParams},
 	}
 
