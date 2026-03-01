@@ -94,7 +94,7 @@ func TestParseFlags(t *testing.T) {
 		},
 		{
 			name:    "custom values",
-			args:    []string{"-transport", "http", "-port", "9000", "-request-timeout", "60s"},
+			args:    []string{"-transport", "http", "-port", "9000", "-request-timeout", "60s", "-allowed-origins", " https://example.com, ,http://localhost:* "},
 			wantErr: false,
 			validate: func(t *testing.T, cfg *Config) {
 				if cfg.TransportType != "http" {
@@ -105,6 +105,15 @@ func TestParseFlags(t *testing.T) {
 				}
 				if cfg.RequestTimeout != 60*time.Second {
 					t.Errorf("Expected RequestTimeout 60s, got %v", cfg.RequestTimeout)
+				}
+				if len(cfg.AllowedOrigins) != 2 {
+					t.Fatalf("Expected 2 allowed origins, got %d", len(cfg.AllowedOrigins))
+				}
+				if cfg.AllowedOrigins[0] != "https://example.com" {
+					t.Errorf("Expected first origin https://example.com, got %s", cfg.AllowedOrigins[0])
+				}
+				if cfg.AllowedOrigins[1] != "http://localhost:*" {
+					t.Errorf("Expected second origin http://localhost:*, got %s", cfg.AllowedOrigins[1])
 				}
 			},
 		},

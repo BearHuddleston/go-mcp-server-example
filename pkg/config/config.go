@@ -60,7 +60,7 @@ func ParseFlags() (*Config, error) {
 	cfg.HTTPPort = *port
 	cfg.RequestTimeout = *requestTimeout
 	if *allowedOrigins != "" {
-		cfg.AllowedOrigins = strings.Split(*allowedOrigins, ",")
+		cfg.AllowedOrigins = parseAllowedOrigins(*allowedOrigins)
 	}
 
 	return cfg, cfg.Validate()
@@ -77,4 +77,19 @@ func (c *Config) Validate() error {
 	}
 
 	return nil
+}
+
+func parseAllowedOrigins(value string) []string {
+	origins := strings.Split(value, ",")
+	normalized := make([]string, 0, len(origins))
+
+	for _, origin := range origins {
+		trimmed := strings.TrimSpace(origin)
+		if trimmed == "" {
+			continue
+		}
+		normalized = append(normalized, trimmed)
+	}
+
+	return normalized
 }

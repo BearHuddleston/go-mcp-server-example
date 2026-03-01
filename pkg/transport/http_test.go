@@ -4,8 +4,10 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"net"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -237,5 +239,97 @@ func TestHandlePostAcceptParsingSupportsQValues(t *testing.T) {
 
 	if rr.Code != http.StatusOK {
 		t.Fatalf("expected status 200, got %d", rr.Code)
+	}
+}
+
+func TestIsOriginAllowedDoesNotMatchSubstringHosts(t *testing.T) {
+	tx := newHTTPTransportForTest()
+
+	if tx.isOriginAllowed("http://notlocalhost.evil.com") {
+		t.Fatal("expected disallowed origin with localhost substring")
+	}
+
+	if !tx.isOriginAllowed("http://localhost:9000") {
+		t.Fatal("expected localhost origin to be allowed")
+	}
+}
+
+func TestOriginPatternEscapesRegexMetacharacters(t *testing.T) {
+	cfg := &config.Config{
+		TransportType:   "http",
+		HTTPPort:        8080,
+		RequestTimeout:  time.Second,
+		ShutdownTimeout: time.Second,
+		ReadTimeout:     time.Second,
+		WriteTimeout:    time.Second,
+		IdleTimeout:     time.Second,
+		AllowedOrigins:  []string{"https://api.example.com"},
+	}
+
+	tx := NewHTTP(cfg)
+
+	if !tx.isOriginAllowed("https://api.example.com") {
+		t.Fatal("expected exact configured origin to be allowed")
+	}
+
+	if tx.isOriginAllowed("https://apiXexampleYcom") {
+		t.Fatal("expected origin with regex-like substitutions to be disallowed")
+	}
+}
+
+func TestHandleDeleteCleansEventCounter(t *testing.T) {
+	tx := newHTTPTransportForTest()
+	sessionID := "session-1"
+	tx.registerSession(sessionID)
+	tx.setEventCounter(sessionID, 10)
+
+	req := httptest.NewRequest(http.MethodDelete, "/mcp", nil)
+	req.Header.Set(mcp.SessionIDHeader, sessionID)
+	req.Header.Set(mcp.ProtocolVersionHeader, mcp.ProtocolVersion)
+
+	rr := httptest.NewRecorder()
+	tx.handleDelete(rr, req)
+
+	if rr.Code != http.StatusNoContent {
+		t.Fatalf("expected status 204, got %d", rr.Code)
+	}
+
+	tx.mu.RLock()
+	_, exists := tx.eventCounters[sessionID]
+	tx.mu.RUnlock()
+	if exists {
+		t.Fatal("expected event counter to be removed when session is deleted")
+	}
+}
+
+func TestStartReturnsListenError(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("failed to allocate test listener: %v", err)
+	}
+	defer ln.Close()
+
+	port := ln.Addr().(*net.TCPAddr).Port
+	cfg := &config.Config{
+		TransportType:   "http",
+		HTTPPort:        port,
+		RequestTimeout:  time.Second,
+		ShutdownTimeout: time.Second,
+		ReadTimeout:     time.Second,
+		WriteTimeout:    time.Second,
+		IdleTimeout:     time.Second,
+		AllowedOrigins:  []string{"http://localhost:*"},
+	}
+
+	tx := NewHTTP(cfg)
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	err = tx.Start(ctx, &httpMockServer{})
+	if err == nil {
+		t.Fatal("expected startup error when port is already bound")
+	}
+	if !strings.Contains(err.Error(), "http server failed") {
+		t.Fatalf("expected startup failure error, got %v", err)
 	}
 }

@@ -11,7 +11,9 @@ import (
 	"io"
 	"log/slog"
 	"mime"
+	"net"
 	"net/http"
+	"net/url"
 	"regexp"
 	"strconv"
 	"strings"
@@ -114,8 +116,7 @@ func NewHTTP(cfg *config.Config) *HTTPTransport {
 			continue
 		}
 
-		// Support port wildcards (e.g., "http://localhost:*")
-		pattern := "^" + strings.ReplaceAll(allowed, "*", ".*") + "$"
+		pattern := "^" + strings.ReplaceAll(regexp.QuoteMeta(allowed), `\*`, ".*") + "$"
 		re, err := regexp.Compile(pattern)
 		if err != nil {
 			slog.Warn("invalid origin pattern; skipping", "pattern", allowed, "error", err)
@@ -164,17 +165,26 @@ func (t *HTTPTransport) Start(ctx context.Context, server mcp.Server) error {
 	slog.Info("starting HTTP transport", "port", t.port)
 	slog.Info("MCP endpoint", "url", fmt.Sprintf("http://localhost:%d/mcp", t.port))
 
+	errCh := make(chan error, 1)
+
 	// Start server in goroutine
 	go func() {
 		if err := t.server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			slog.Error("HTTP server error", "error", err)
+			select {
+			case errCh <- err:
+			default:
+			}
 		}
 	}()
 
-	// Wait for context cancellation
-	<-ctx.Done()
-	slog.Info("HTTP transport shutting down")
-	return t.Stop()
+	select {
+	case <-ctx.Done():
+		slog.Info("HTTP transport shutting down")
+		return t.Stop()
+	case err := <-errCh:
+		return fmt.Errorf("http server failed: %w", err)
+	}
 }
 
 func (t *HTTPTransport) Stop() error {
@@ -307,11 +317,6 @@ func (t *HTTPTransport) handleGet(ctx context.Context, server mcp.Server, w http
 		return
 	}
 
-	if !t.sessionExists(sessionID) {
-		http.Error(w, "Unknown session", http.StatusNotFound)
-		return
-	}
-
 	session := t.startSSEStream(w, r, sessionID)
 	if session == nil {
 		return
@@ -339,6 +344,7 @@ func (t *HTTPTransport) handleDelete(w http.ResponseWriter, r *http.Request) {
 	t.mu.Lock()
 	_, known := t.knownSessions[sessionID]
 	delete(t.knownSessions, sessionID)
+	delete(t.eventCounters, sessionID)
 	if session, ok := t.sessions[sessionID]; ok {
 		session.close()
 		delete(t.sessions, sessionID)
@@ -606,6 +612,11 @@ func (t *HTTPTransport) startSSEStream(w http.ResponseWriter, r *http.Request, s
 	}
 
 	t.mu.Lock()
+	if _, ok := t.knownSessions[sessionID]; !ok {
+		t.mu.Unlock()
+		http.Error(w, "Unknown session", http.StatusNotFound)
+		return nil
+	}
 	t.sessions[sessionID] = session
 	t.mu.Unlock()
 
@@ -760,11 +771,30 @@ func (t *HTTPTransport) isOriginAllowed(origin string) bool {
 	}
 
 	// Fallback: check if it's a localhost request for development
-	if strings.Contains(origin, "localhost") || strings.Contains(origin, "127.0.0.1") || strings.Contains(origin, "::1") {
+	if isLocalhostOrigin(origin) {
 		return true
 	}
 
 	return false
+}
+
+func isLocalhostOrigin(origin string) bool {
+	parsed, err := url.Parse(origin)
+	if err != nil {
+		return false
+	}
+
+	host := strings.TrimSpace(parsed.Hostname())
+	if host == "" {
+		return false
+	}
+
+	if strings.EqualFold(host, "localhost") {
+		return true
+	}
+
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
 }
 
 func (t *HTTPTransport) securityMiddleware(next http.Handler) http.Handler {

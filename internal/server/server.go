@@ -188,30 +188,18 @@ func (s *Server) handlePing(ctx context.Context, id any) error {
 
 // Parameter parsing helpers
 func (s *Server) parseToolCallParams(params any) (mcp.ToolCallParams, error) {
-	if params == nil {
-		return mcp.ToolCallParams{}, fmt.Errorf("params cannot be nil")
+	paramsMap, err := parseParamsMap(params)
+	if err != nil {
+		return mcp.ToolCallParams{}, err
 	}
-	
-	// Convert params to map
-	paramsMap, ok := params.(map[string]any)
-	if !ok {
-		return mcp.ToolCallParams{}, fmt.Errorf("params must be an object")
+
+	name, err := requiredStringParam(paramsMap, "name")
+	if err != nil {
+		return mcp.ToolCallParams{}, err
 	}
-	
-	// Extract name
-	name, ok := paramsMap["name"].(string)
-	if !ok {
-		return mcp.ToolCallParams{}, fmt.Errorf("name parameter is required and must be a string")
-	}
-	
-	// Extract arguments
-	args := make(map[string]any)
-	if arguments, exists := paramsMap["arguments"]; exists {
-		if argsMap, ok := arguments.(map[string]any); ok {
-			args = argsMap
-		}
-	}
-	
+
+	args := optionalArguments(paramsMap)
+
 	return mcp.ToolCallParams{
 		Name:      name,
 		Arguments: args,
@@ -219,47 +207,67 @@ func (s *Server) parseToolCallParams(params any) (mcp.ToolCallParams, error) {
 }
 
 func (s *Server) parseResourceParams(params any) (mcp.ResourceParams, error) {
-	if params == nil {
-		return mcp.ResourceParams{}, fmt.Errorf("params cannot be nil")
+	paramsMap, err := parseParamsMap(params)
+	if err != nil {
+		return mcp.ResourceParams{}, err
 	}
-	
-	paramsMap, ok := params.(map[string]any)
-	if !ok {
-		return mcp.ResourceParams{}, fmt.Errorf("params must be an object")
+
+	uri, err := requiredStringParam(paramsMap, "uri")
+	if err != nil {
+		return mcp.ResourceParams{}, err
 	}
-	
-	uri, ok := paramsMap["uri"].(string)
-	if !ok {
-		return mcp.ResourceParams{}, fmt.Errorf("uri parameter is required and must be a string")
-	}
-	
+
 	return mcp.ResourceParams{URI: uri}, nil
 }
 
 func (s *Server) parsePromptParams(params any) (mcp.PromptParams, error) {
-	if params == nil {
-		return mcp.PromptParams{}, fmt.Errorf("params cannot be nil")
+	paramsMap, err := parseParamsMap(params)
+	if err != nil {
+		return mcp.PromptParams{}, err
 	}
-	
+
+	name, err := requiredStringParam(paramsMap, "name")
+	if err != nil {
+		return mcp.PromptParams{}, err
+	}
+
+	args := optionalArguments(paramsMap)
+
+	return mcp.PromptParams{
+		Name:      name,
+		Arguments: args,
+	}, nil
+}
+
+func parseParamsMap(params any) (map[string]any, error) {
+	if params == nil {
+		return nil, fmt.Errorf("params cannot be nil")
+	}
+
 	paramsMap, ok := params.(map[string]any)
 	if !ok {
-		return mcp.PromptParams{}, fmt.Errorf("params must be an object")
+		return nil, fmt.Errorf("params must be an object")
 	}
-	
-	name, ok := paramsMap["name"].(string)
+
+	return paramsMap, nil
+}
+
+func requiredStringParam(paramsMap map[string]any, key string) (string, error) {
+	value, ok := paramsMap[key].(string)
 	if !ok {
-		return mcp.PromptParams{}, fmt.Errorf("name parameter is required and must be a string")
+		return "", fmt.Errorf("%s parameter is required and must be a string", key)
 	}
-	
+
+	return value, nil
+}
+
+func optionalArguments(paramsMap map[string]any) map[string]any {
 	args := make(map[string]any)
 	if arguments, exists := paramsMap["arguments"]; exists {
 		if argsMap, ok := arguments.(map[string]any); ok {
 			args = argsMap
 		}
 	}
-	
-	return mcp.PromptParams{
-		Name:      name,
-		Arguments: args,
-	}, nil
+
+	return args
 }
