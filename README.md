@@ -1,8 +1,20 @@
-# MCP Server Example
+# MCP Server Template
 
 This repository is a Go MCP server designed to be driven by an AI agent.
 
-It now supports a spec-driven onboarding flow so an agent can ask a human what server they want, write a JSON spec, and run this codebase as a template.
+It supports a spec-driven onboarding flow so an agent can ask a human what server they want, write a JSON spec, and run this codebase as a reusable MCP template.
+
+## Quick Start
+
+```bash
+go build -o mcp-template-server ./cmd/mcpserver
+
+# Run defaults from in-code catalog
+./mcp-template-server
+
+# Run from spec template
+./mcp-template-server -spec ./mcp-spec.example.json
+```
 
 ## Onboarding Workflow
 
@@ -19,7 +31,7 @@ Use `mcp-spec.example.json` in the repo root as a starting template.
 Use this prompt when connecting an AI agent to this server.
 
 ```text
-You are an AI assistant connected to an MCP server named "MCP Example Server".
+You are an AI assistant connected to an MCP server named "MCP Template Server".
 
 Goal:
 - Help the user complete software engineering tasks using MCP tools, resources, and prompts.
@@ -34,11 +46,11 @@ Behavior rules:
 
 Workflow:
 1. Initialize MCP session.
-2. List tools and resources.
-3. Use listItems to discover catalog options.
-4. Use getItemDetails(name=...) for specific item facts.
-5. Use resource catalog://items when broad context is needed.
-6. Use prompts planRecommendation or itemBrief when drafting user-facing guidance.
+2. Discover available capabilities via tools/list, resources/list, and prompts/list.
+3. Choose tool/resource/prompt names from discovery results (do not hardcode names).
+4. Call the list-style tool first to enumerate options.
+5. Call the details-style tool for selected items.
+6. Use matching resource and prompt endpoints for broader context and user-facing output.
 
 Output style:
 - Use short sections: "What I checked", "Result", "Next step".
@@ -48,36 +60,38 @@ Output style:
 
 ## Server Capabilities
 
-### Tools
+### Tools (Default)
 - `listItems`: List available catalog item names.
 - `getItemDetails`: Get details for one catalog item (`name` required).
 
-### Resources
+### Resources (Default)
 - `catalog://items`: Full catalog dataset.
 
-### Prompts
+### Prompts (Default)
 - `planRecommendation`: Recommendation prompt for selecting an item by budget/goal.
 - `itemBrief`: Prompt for generating a concise brief for a specific item.
 
-When `-spec` is provided, tool/resource/prompt names and prompt templates come from the spec file.
+When `-spec` is provided, tool/resource/prompt names, argument names, and prompt templates come from the spec file.
 
 ## Run Locally
 
 ```bash
-go build -o mcpserver ./cmd/mcpserver
+go build -o mcp-template-server ./cmd/mcpserver
 
 # stdio (default)
-./mcpserver
+./mcp-template-server
 
 # HTTP transport
-./mcpserver -transport http -port 8080
+./mcp-template-server -transport http -port 8080
 
 # Spec-driven behavior (stdio)
-./mcpserver -spec ./mcp-spec.example.json
+./mcp-template-server -spec ./mcp-spec.example.json
 
 # Spec-driven behavior (HTTP)
-./mcpserver -transport http -port 8080 -spec ./mcp-spec.example.json
+./mcp-template-server -transport http -port 8080 -spec ./mcp-spec.example.json
 ```
+
+If the spec is invalid, startup fails with a validation error.
 
 ## Spec Schema
 
@@ -97,6 +111,29 @@ go build -o mcpserver ./cmd/mcpserver
   - `item_brief`
 
 Unknown JSON fields are rejected at load time.
+
+## Development
+
+```bash
+go test ./...
+go build ./cmd/mcpserver
+```
+
+## Docker
+
+```bash
+# Build image
+docker build -t mcp-template-server:local .
+
+# Run default container command (HTTP on port 8080)
+docker run --rm -p 8080:8080 mcp-template-server:local
+
+# Run with spec-driven behavior
+docker run --rm -p 8080:8080 \
+  -v "$(pwd)/mcp-spec.example.json:/root/mcp-spec.example.json:ro" \
+  mcp-template-server:local \
+  ./mcp-template-server --transport http --port 8080 --spec /root/mcp-spec.example.json
+```
 
 ## HTTP Endpoints
 
