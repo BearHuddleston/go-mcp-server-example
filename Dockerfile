@@ -11,7 +11,7 @@ RUN go mod download
 COPY . .
 
 # Build the application
-RUN CGO_ENABLED=0 GOOS=linux go build -o mcp-server ./cmd/mcpserver
+RUN CGO_ENABLED=0 GOOS=linux go build -o mcp-template-server ./cmd/mcpserver
 
 # Final stage
 FROM alpine:latest
@@ -23,10 +23,10 @@ RUN apk --no-cache add ca-certificates
 WORKDIR /root/
 
 # Copy the binary from builder
-COPY --from=builder /app/mcp-server .
+COPY --from=builder /app/mcp-template-server .
 
 # Expose port 8080 for HTTP transport
 EXPOSE 8080
 
 # Command to run the executable
-CMD ["./mcp-server", "--transport", "http", "--port", "8080"]
+CMD ["./mcp-template-server", "--transport", "http", "--port", "8080"]

@@ -1,8 +1,8 @@
 {
   "schemaVersion": "v1",
   "server": {
-    "name": "MCP Example Server",
-    "version": "1.0.0"
+    "name": "MCP Template Server",
+    "version": "1.1.0"
   },
   "runtime": {
     "transportType": "stdio",

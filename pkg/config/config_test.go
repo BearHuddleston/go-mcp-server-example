@@ -27,14 +27,14 @@ func TestNew(t *testing.T) {
 	})
 
 	t.Run("ServerName", func(t *testing.T) {
-		if cfg.ServerName != "MCP Example Server" {
-			t.Errorf("Expected 'MCP Example Server', got %s", cfg.ServerName)
+		if cfg.ServerName != "MCP Template Server" {
+			t.Errorf("Expected 'MCP Template Server', got %s", cfg.ServerName)
 		}
 	})
 
 	t.Run("ServerVersion", func(t *testing.T) {
-		if cfg.ServerVersion != "1.0.0" {
-			t.Errorf("Expected '1.0.0', got %s", cfg.ServerVersion)
+		if cfg.ServerVersion != "1.1.0" {
+			t.Errorf("Expected '1.1.0', got %s", cfg.ServerVersion)
 		}
 	})
 
