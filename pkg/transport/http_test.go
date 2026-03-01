@@ -292,6 +292,105 @@ func TestHandlePostAcceptParsingSupportsQValues(t *testing.T) {
 	}
 }
 
+func TestHandlePostRejectsMalformedJSON(t *testing.T) {
+	tx := newHTTPTransportForTest()
+	req := httptest.NewRequest(http.MethodPost, "/mcp", bytes.NewReader([]byte("{bad json")))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json, text/event-stream")
+
+	rr := httptest.NewRecorder()
+	tx.handlePost(context.Background(), &httpMockServer{}, rr, req)
+
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("expected status 400, got %d", rr.Code)
+	}
+}
+
+func TestHandlePostRejectsEmptyBody(t *testing.T) {
+	tx := newHTTPTransportForTest()
+	req := httptest.NewRequest(http.MethodPost, "/mcp", bytes.NewReader([]byte("   \n\t  ")))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json, text/event-stream")
+
+	rr := httptest.NewRecorder()
+	tx.handlePost(context.Background(), &httpMockServer{}, rr, req)
+
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("expected status 400, got %d", rr.Code)
+	}
+}
+
+func TestHandlePostRejectsWrongJSONRPCVersion(t *testing.T) {
+	tx := newHTTPTransportForTest()
+	reqBody := mcp.Request{JSONRPC: "1.0", Method: "initialize", ID: 1}
+	body, err := json.Marshal(reqBody)
+	if err != nil {
+		t.Fatalf("marshal request: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/mcp", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json, text/event-stream")
+
+	rr := httptest.NewRecorder()
+	tx.handlePost(context.Background(), &httpMockServer{}, rr, req)
+
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("expected status 400, got %d", rr.Code)
+	}
+}
+
+func TestHandlePostRejectsInitializeNotification(t *testing.T) {
+	tx := newHTTPTransportForTest()
+	body := []byte(`{"jsonrpc":"2.0","method":"initialize"}`)
+	req := httptest.NewRequest(http.MethodPost, "/mcp", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json, text/event-stream")
+
+	rr := httptest.NewRecorder()
+	tx.handlePost(context.Background(), &httpMockServer{}, rr, req)
+
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("expected status 400, got %d", rr.Code)
+	}
+}
+
+func TestHandlePostNotificationAccepted(t *testing.T) {
+	tx := newHTTPTransportForTest()
+	tx.registerSession("session-1")
+	body := []byte(`{"jsonrpc":"2.0","method":"tools/list"}`)
+	req := httptest.NewRequest(http.MethodPost, "/mcp", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json, text/event-stream")
+	req.Header.Set(mcp.SessionIDHeader, "session-1")
+	req.Header.Set(mcp.ProtocolVersionHeader, mcp.ProtocolVersion)
+
+	rr := httptest.NewRecorder()
+	tx.handlePost(context.Background(), &httpMockServer{}, rr, req)
+
+	if rr.Code != http.StatusAccepted {
+		t.Fatalf("expected status 202, got %d", rr.Code)
+	}
+}
+
+func TestHandlePostResponseAcceptedForKnownSession(t *testing.T) {
+	tx := newHTTPTransportForTest()
+	tx.registerSession("session-1")
+	body := []byte(`{"jsonrpc":"2.0","id":1,"result":{"ok":true}}`)
+	req := httptest.NewRequest(http.MethodPost, "/mcp", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json, text/event-stream")
+	req.Header.Set(mcp.SessionIDHeader, "session-1")
+	req.Header.Set(mcp.ProtocolVersionHeader, mcp.ProtocolVersion)
+
+	rr := httptest.NewRecorder()
+	tx.handlePost(context.Background(), &httpMockServer{}, rr, req)
+
+	if rr.Code != http.StatusAccepted {
+		t.Fatalf("expected status 202, got %d", rr.Code)
+	}
+}
+
 func TestIsOriginAllowedDoesNotMatchSubstringHosts(t *testing.T) {
 	tx := newHTTPTransportForTest()
 
@@ -615,6 +714,13 @@ func TestStopAndMiddleware(t *testing.T) {
 		t.Fatal("expected CORS header to be set for allowed origin")
 	}
 
+	req = httptest.NewRequest(http.MethodOptions, "/mcp", nil)
+	rr = httptest.NewRecorder()
+	h.ServeHTTP(rr, req)
+	if rr.Header().Get("Access-Control-Allow-Origin") != "" {
+		t.Fatal("expected no CORS origin header for missing Origin request header")
+	}
+
 	secured := tx.securityMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNoContent)
 	}))
@@ -624,5 +730,39 @@ func TestStopAndMiddleware(t *testing.T) {
 	secured.ServeHTTP(rr, req)
 	if rr.Code != http.StatusForbidden {
 		t.Fatalf("expected 403 for disallowed origin, got %d", rr.Code)
+	}
+}
+
+func TestHTTPTransportSendError(t *testing.T) {
+	tx := newHTTPTransportForTest()
+	rr := httptest.NewRecorder()
+	tx.sendError(rr, "id-1", mcp.ErrorCodeInvalidRequest, "bad", nil)
+
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("expected status 400, got %d", rr.Code)
+	}
+	if !strings.Contains(rr.Body.String(), "bad") {
+		t.Fatalf("expected body to include error message, got %q", rr.Body.String())
+	}
+}
+
+func TestSSEResponseSenderSendError(t *testing.T) {
+	rr := httptest.NewRecorder()
+	session := &SSESession{
+		ID:      "session-1",
+		writer:  rr,
+		flusher: rr,
+		nextEventID: func() string {
+			return "session-1:1"
+		},
+	}
+	sender := &SSEResponseSender{session: session}
+
+	err := sender.SendError("id-1", mcp.ErrorCodeInternalError, "boom", nil)
+	if err != nil {
+		t.Fatalf("SendError failed: %v", err)
+	}
+	if !strings.Contains(rr.Body.String(), "boom") {
+		t.Fatalf("expected SSE error payload in output, got %q", rr.Body.String())
 	}
 }

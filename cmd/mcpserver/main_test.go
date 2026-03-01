@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"os"
 	"strings"
 	"testing"
@@ -85,5 +86,47 @@ func TestRunWithStdioEOF(t *testing.T) {
 	err = run(cfg)
 	if err != nil {
 		t.Fatalf("expected run to exit cleanly on EOF stdin, got %v", err)
+	}
+}
+
+func TestExecute(t *testing.T) {
+	tests := []struct {
+		name     string
+		parseErr error
+		runErr   error
+		wantCode int
+		wantLog  string
+	}{
+		{name: "parse error", parseErr: errors.New("bad flags"), wantCode: 1, wantLog: "configuration error"},
+		{name: "run error", runErr: errors.New("boom"), wantCode: 1, wantLog: "server error"},
+		{name: "success", wantCode: 0, wantLog: ""},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var logBuf strings.Builder
+			parse := func() (*config.Config, error) {
+				if tt.parseErr != nil {
+					return nil, tt.parseErr
+				}
+				return config.New(), nil
+			}
+			runServer := func(cfg *config.Config) error {
+				return tt.runErr
+			}
+
+			code := execute(parse, runServer, &logBuf)
+			if code != tt.wantCode {
+				t.Fatalf("expected code %d, got %d", tt.wantCode, code)
+			}
+
+			logs := logBuf.String()
+			if tt.wantLog != "" && !strings.Contains(logs, tt.wantLog) {
+				t.Fatalf("expected logs to contain %q, got %q", tt.wantLog, logs)
+			}
+			if tt.wantLog == "" && logs != "" {
+				t.Fatalf("expected no logs for success, got %q", logs)
+			}
+		})
 	}
 }

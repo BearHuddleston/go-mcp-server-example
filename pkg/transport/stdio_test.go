@@ -1,8 +1,12 @@
 package transport
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
+	"io"
+	"strings"
 	"testing"
 	"time"
 
@@ -11,6 +15,16 @@ import (
 )
 
 type mockServer struct{}
+
+type countingServer struct {
+	calls int
+}
+
+type failingReader struct {
+	err error
+}
+
+type failingWriter struct{}
 
 func (m *mockServer) Initialize(ctx context.Context) (*mcp.InitializeResponse, error) {
 	return &mcp.InitializeResponse{
@@ -35,6 +49,23 @@ func (m *mockServer) HandleRequest(ctx context.Context, req mcp.Request) error {
 	}
 
 	return sender.SendResponse(response)
+}
+
+func (m *countingServer) Initialize(ctx context.Context) (*mcp.InitializeResponse, error) {
+	return (&mockServer{}).Initialize(ctx)
+}
+
+func (m *countingServer) HandleRequest(ctx context.Context, req mcp.Request) error {
+	m.calls++
+	return (&mockServer{}).HandleRequest(ctx, req)
+}
+
+func (r *failingReader) Read(p []byte) (int, error) {
+	return 0, r.err
+}
+
+func (f *failingWriter) Write(p []byte) (int, error) {
+	return 0, io.ErrClosedPipe
 }
 
 func TestNewStdio(t *testing.T) {
@@ -286,6 +317,95 @@ func TestStdio_Stop(t *testing.T) {
 	}
 }
 
+func TestStdio_Start(t *testing.T) {
+	t.Run("context canceled", func(t *testing.T) {
+		cfg := &config.Config{RequestTimeout: 30 * time.Second}
+		stdio := NewStdio(cfg)
+		stdio.input = strings.NewReader("{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"test\"}\n")
+		stdio.output = &bytes.Buffer{}
+
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+
+		err := stdio.Start(ctx, &mockServer{})
+		if err != nil {
+			t.Fatalf("expected nil on canceled context, got %v", err)
+		}
+	})
+
+	t.Run("eof exits cleanly", func(t *testing.T) {
+		cfg := &config.Config{RequestTimeout: 30 * time.Second}
+		stdio := NewStdio(cfg)
+		stdio.input = strings.NewReader("")
+		stdio.output = &bytes.Buffer{}
+
+		err := stdio.Start(context.Background(), &mockServer{})
+		if err != nil {
+			t.Fatalf("expected nil on EOF, got %v", err)
+		}
+	})
+
+	t.Run("blank line skipped and valid message handled", func(t *testing.T) {
+		cfg := &config.Config{RequestTimeout: 30 * time.Second}
+		stdio := NewStdio(cfg)
+		stdio.input = strings.NewReader("\n{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"test\"}\n")
+		var out bytes.Buffer
+		stdio.output = &out
+
+		srv := &countingServer{}
+		err := stdio.Start(context.Background(), srv)
+		if err != nil {
+			t.Fatalf("expected nil for normal scan completion, got %v", err)
+		}
+		if srv.calls != 1 {
+			t.Fatalf("expected one handled request, got %d", srv.calls)
+		}
+		if !strings.Contains(out.String(), `"test":"response"`) {
+			t.Fatalf("expected response output, got %q", out.String())
+		}
+	})
+
+	t.Run("scanner read error is returned", func(t *testing.T) {
+		cfg := &config.Config{RequestTimeout: 30 * time.Second}
+		stdio := NewStdio(cfg)
+		stdio.input = &failingReader{err: errors.New("read failure")}
+		stdio.output = &bytes.Buffer{}
+
+		err := stdio.Start(context.Background(), &mockServer{})
+		if err == nil {
+			t.Fatal("expected scanner read error")
+		}
+		if !strings.Contains(err.Error(), "read failure") {
+			t.Fatalf("expected read failure error, got %v", err)
+		}
+	})
+}
+
+func TestStdoutSender(t *testing.T) {
+	t.Run("SendError writes JSON error response", func(t *testing.T) {
+		var out bytes.Buffer
+		sender := &StdoutSender{writer: &out}
+
+		err := sender.SendError("id-1", mcp.ErrorCodeInternalError, "boom", nil)
+		if err != nil {
+			t.Fatalf("SendError failed: %v", err)
+		}
+
+		line := strings.TrimSpace(out.String())
+		if !strings.Contains(line, "\"error\"") || !strings.Contains(line, "boom") {
+			t.Fatalf("expected serialized error JSON, got %q", line)
+		}
+	})
+
+	t.Run("SendResponse returns write errors", func(t *testing.T) {
+		sender := &StdoutSender{writer: &failingWriter{}}
+		err := sender.SendResponse(mcp.Response{JSONRPC: mcp.JSONRPCVersion, ID: 1, Result: map[string]any{"ok": true}})
+		if err == nil {
+			t.Fatal("expected write failure error")
+		}
+	})
+}
+
 func TestStdio_sendParseError(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -327,6 +447,7 @@ func TestStdio_sendParseError(t *testing.T) {
 				RequestTimeout: 30 * time.Second,
 			}
 			stdio := NewStdio(cfg)
+			stdio.output = &bytes.Buffer{}
 
 			parseErr := json.Unmarshal([]byte(tt.input), &struct{}{})
 			err := stdio.sendParseError(tt.input, parseErr)

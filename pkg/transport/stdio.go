@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 
@@ -15,7 +16,10 @@ import (
 
 // Stdio implements the stdio transport for MCP
 type Stdio struct {
-	config *config.Config
+	config     *config.Config
+	input      io.Reader
+	output     io.Writer
+	newScanner func(io.Reader) *bufio.Scanner
 }
 
 // NewStdio creates a new stdio transport
@@ -23,14 +27,21 @@ func NewStdio(cfg *config.Config) *Stdio {
 	if cfg == nil {
 		cfg = config.New()
 	}
-	return &Stdio{config: cfg}
+	return &Stdio{
+		config: cfg,
+		input:  os.Stdin,
+		output: os.Stdout,
+		newScanner: func(r io.Reader) *bufio.Scanner {
+			return bufio.NewScanner(r)
+		},
+	}
 }
 
 // Start begins listening on stdin for JSON-RPC messages
 func (t *Stdio) Start(ctx context.Context, server mcp.Server) error {
 	slog.Info("starting stdio transport")
 
-	scanner := bufio.NewScanner(os.Stdin)
+	scanner := t.newScanner(t.input)
 
 	// Create channels for message processing
 	lineChan := make(chan string)
@@ -110,7 +121,7 @@ func (t *Stdio) handleMessage(ctx context.Context, server mcp.Server, line strin
 	}
 
 	// Add stdout sender to context
-	reqCtx := context.WithValue(ctx, mcp.ResponseSenderKey, &StdoutSender{})
+	reqCtx := context.WithValue(ctx, mcp.ResponseSenderKey, &StdoutSender{writer: t.output})
 	reqCtx, cancel := context.WithTimeout(reqCtx, t.config.RequestTimeout)
 	defer cancel()
 
@@ -142,19 +153,32 @@ func (t *Stdio) sendParseError(line string, err error) error {
 		return errors.Join(err, marshErr)
 	}
 
-	fmt.Println(string(respBytes))
+	if _, writeErr := fmt.Fprintln(t.output, string(respBytes)); writeErr != nil {
+		return errors.Join(err, writeErr)
+	}
 	return nil
 }
 
 // StdoutSender implements ResponseSender for stdio transport
-type StdoutSender struct{}
+type StdoutSender struct {
+	writer io.Writer
+}
+
+func (s *StdoutSender) resolveWriter() io.Writer {
+	if s.writer != nil {
+		return s.writer
+	}
+	return os.Stdout
+}
 
 func (s *StdoutSender) SendResponse(response mcp.Response) error {
 	jsonBytes, err := json.Marshal(response)
 	if err != nil {
 		return fmt.Errorf("failed to marshal response: %w", err)
 	}
-	fmt.Println(string(jsonBytes))
+	if _, err := fmt.Fprintln(s.resolveWriter(), string(jsonBytes)); err != nil {
+		return fmt.Errorf("failed to write response: %w", err)
+	}
 	return nil
 }
 

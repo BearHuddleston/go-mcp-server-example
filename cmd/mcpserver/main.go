@@ -18,6 +18,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"os/signal"
@@ -30,21 +31,34 @@ import (
 	"github.com/BearHuddleston/mcp-server-example/pkg/transport"
 )
 
-func main() {
-	// Parse configuration
-	cfg, err := config.ParseFlags()
-	if err != nil {
-		slog.Error("configuration error", "error", err)
-		os.Exit(1)
-	}
+var (
+	parseFlagsFunc = config.ParseFlags
+	runFunc        = run
+	exitFunc       = os.Exit
+)
 
-	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo}))
+func main() {
+	if code := execute(parseFlagsFunc, runFunc, os.Stderr); code != 0 {
+		exitFunc(code)
+	}
+}
+
+func execute(parseFlags func() (*config.Config, error), runServer func(*config.Config) error, stderr io.Writer) int {
+	logger := slog.New(slog.NewTextHandler(stderr, &slog.HandlerOptions{Level: slog.LevelInfo}))
 	slog.SetDefault(logger)
 
-	if err := run(cfg); err != nil {
-		slog.Error("server error", "error", err)
-		os.Exit(1)
+	cfg, err := parseFlags()
+	if err != nil {
+		slog.Error("configuration error", "error", err)
+		return 1
 	}
+
+	if err := runServer(cfg); err != nil {
+		slog.Error("server error", "error", err)
+		return 1
+	}
+
+	return 0
 }
 
 // run starts and runs the MCP server with the given configuration
