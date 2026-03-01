@@ -51,7 +51,7 @@ Use `mcp-spec.example.json` in the repo root as a starting template.
 
 Use this prompt when connecting an AI agent to this server.
 
-Agent-agnostic operator skill/playbook is available at `skills/mcp-template-operator.md`.
+Agent-agnostic skill index is in `AGENTS.md`; the operator skill is `skills/mcp-template-operator/SKILL.md`.
 
 ```text
 You are an AI assistant connected to an MCP server named "MCP Template Server".
