@@ -8,7 +8,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
+	"mime"
 	"net/http"
 	"regexp"
 	"strconv"
@@ -26,6 +28,7 @@ type HTTPTransport struct {
 	server        *http.Server
 	sessions      map[string]*SSESession
 	knownSessions map[string]struct{}
+	eventCounters map[string]uint64
 	mu            sync.RWMutex
 	config        *config.Config
 	originRegexes []*regexp.Regexp
@@ -86,12 +89,12 @@ func (s *SSEResponseSender) SendError(id any, code int, message string, data any
 }
 
 type SSESession struct {
-	ID      string
-	writer  http.ResponseWriter
-	flusher http.Flusher
-	eventID int
-	mu      sync.Mutex
-	closed  bool
+	ID          string
+	writer      http.ResponseWriter
+	flusher     http.Flusher
+	nextEventID func() string
+	mu          sync.Mutex
+	closed      bool
 }
 
 // NewHTTP creates a new HTTP transport
@@ -100,6 +103,7 @@ func NewHTTP(cfg *config.Config) *HTTPTransport {
 		port:          cfg.HTTPPort,
 		sessions:      make(map[string]*SSESession),
 		knownSessions: make(map[string]struct{}),
+		eventCounters: make(map[string]uint64),
 		config:        cfg,
 	}
 
@@ -181,6 +185,7 @@ func (t *HTTPTransport) Stop() error {
 	}
 	t.sessions = make(map[string]*SSESession)
 	t.knownSessions = make(map[string]struct{})
+	t.eventCounters = make(map[string]uint64)
 	t.mu.Unlock()
 
 	if t.server != nil {
@@ -192,8 +197,28 @@ func (t *HTTPTransport) Stop() error {
 }
 
 func (t *HTTPTransport) handlePost(ctx context.Context, server mcp.Server, w http.ResponseWriter, r *http.Request) {
+	if !isJSONContentType(r.Header.Get("Content-Type")) {
+		t.sendErrorWithStatus(w, -1, mcp.ErrorCodeInvalidRequest, "Content-Type must be application/json", nil, http.StatusUnsupportedMediaType)
+		return
+	}
+
+	wantsJSON, wantsSSE := parseAcceptTypes(r.Header.Get("Accept"))
+	if !wantsJSON || !wantsSSE {
+		t.sendErrorWithStatus(w, -1, mcp.ErrorCodeInvalidRequest, "Accept header must include both application/json and text/event-stream", nil, http.StatusNotAcceptable)
+		return
+	}
+
+	decoder := json.NewDecoder(r.Body)
 	var raw json.RawMessage
-	if err := json.NewDecoder(r.Body).Decode(&raw); err != nil {
+	if err := decoder.Decode(&raw); err != nil {
+		t.sendErrorWithStatus(w, -1, mcp.ErrorCodeParseError, "Parse error", err.Error(), http.StatusBadRequest)
+		return
+	}
+	var trailing json.RawMessage
+	if err := decoder.Decode(&trailing); err == nil {
+		t.sendErrorWithStatus(w, -1, mcp.ErrorCodeInvalidRequest, "Request body must contain exactly one JSON-RPC message", nil, http.StatusBadRequest)
+		return
+	} else if !errors.Is(err, io.EOF) {
 		t.sendErrorWithStatus(w, -1, mcp.ErrorCodeParseError, "Parse error", err.Error(), http.StatusBadRequest)
 		return
 	}
@@ -208,27 +233,35 @@ func (t *HTTPTransport) handlePost(ctx context.Context, server mcp.Server, w htt
 		return
 	}
 
-	var req mcp.Request
-	if err := json.Unmarshal(raw, &req); err != nil {
+	kind, req, messageID, err := classifyJSONRPCMessage(raw)
+	if err != nil {
 		t.sendErrorWithStatus(w, -1, mcp.ErrorCodeParseError, "Parse error", err.Error(), http.StatusBadRequest)
 		return
 	}
-
-	acceptHeader := r.Header.Get("Accept")
-	wantsSSE := strings.Contains(acceptHeader, "text/event-stream")
-	wantsJSON := strings.Contains(acceptHeader, "application/json")
-	if !wantsJSON && !wantsSSE {
-		t.sendErrorWithStatus(w, req.ID, mcp.ErrorCodeInvalidRequest, "Accept header must include application/json and/or text/event-stream", nil, http.StatusBadRequest)
+	if kind == messageKindInvalid {
+		t.sendErrorWithStatus(w, messageID, mcp.ErrorCodeInvalidRequest, "Invalid JSON-RPC message shape", nil, http.StatusBadRequest)
 		return
 	}
-
 	if req.JSONRPC != mcp.JSONRPCVersion {
-		t.sendErrorWithStatus(w, req.ID, mcp.ErrorCodeInvalidRequest, "Invalid JSON-RPC version", nil, http.StatusBadRequest)
+		t.sendErrorWithStatus(w, messageID, mcp.ErrorCodeInvalidRequest, "Invalid JSON-RPC version", nil, http.StatusBadRequest)
 		return
 	}
 
-	if req.Method == "" {
+	if kind == messageKindResponse {
+		if err := t.validateExistingSession(r); err != nil {
+			status := http.StatusBadRequest
+			if errors.Is(err, errUnknownSession) {
+				status = http.StatusNotFound
+			}
+			t.sendErrorWithStatus(w, messageID, mcp.ErrorCodeInvalidRequest, err.Error(), nil, status)
+			return
+		}
 		w.WriteHeader(http.StatusAccepted)
+		return
+	}
+
+	if req.Method == "initialize" && kind != messageKindRequest {
+		t.sendErrorWithStatus(w, messageID, mcp.ErrorCodeInvalidRequest, "initialize must be a request with an id", nil, http.StatusBadRequest)
 		return
 	}
 
@@ -238,11 +271,11 @@ func (t *HTTPTransport) handlePost(ctx context.Context, server mcp.Server, w htt
 		if errors.Is(err, errUnknownSession) {
 			status = http.StatusNotFound
 		}
-		t.sendErrorWithStatus(w, req.ID, mcp.ErrorCodeInvalidRequest, err.Error(), nil, status)
+		t.sendErrorWithStatus(w, messageID, mcp.ErrorCodeInvalidRequest, err.Error(), nil, status)
 		return
 	}
 
-	if req.ID == nil {
+	if kind == messageKindNotification {
 		slog.Info("received notification", "method", req.Method)
 		w.WriteHeader(http.StatusAccepted)
 		return
@@ -258,8 +291,8 @@ func (t *HTTPTransport) handlePost(ctx context.Context, server mcp.Server, w htt
 
 func (t *HTTPTransport) handleGet(ctx context.Context, server mcp.Server, w http.ResponseWriter, r *http.Request) {
 	_ = server
-	if !strings.Contains(r.Header.Get("Accept"), "text/event-stream") {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+	if !hasAcceptType(r.Header.Get("Accept"), "text/event-stream") {
+		http.Error(w, "Not acceptable", http.StatusNotAcceptable)
 		return
 	}
 
@@ -322,6 +355,122 @@ func (t *HTTPTransport) handleDelete(w http.ResponseWriter, r *http.Request) {
 
 var errUnknownSession = errors.New("unknown session")
 
+type messageKind string
+
+const (
+	messageKindInvalid      messageKind = "invalid"
+	messageKindRequest      messageKind = "request"
+	messageKindNotification messageKind = "notification"
+	messageKindResponse     messageKind = "response"
+)
+
+func classifyJSONRPCMessage(raw json.RawMessage) (messageKind, mcp.Request, any, error) {
+	var req mcp.Request
+	if err := json.Unmarshal(raw, &req); err != nil {
+		return messageKindInvalid, mcp.Request{}, nil, err
+	}
+
+	var obj map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &obj); err != nil {
+		return messageKindInvalid, mcp.Request{}, nil, err
+	}
+
+	hasMethod := false
+	if methodRaw, ok := obj["method"]; ok {
+		method := strings.TrimSpace(string(methodRaw))
+		hasMethod = method != "" && method != "null" && method != `""`
+	}
+
+	hasResult := false
+	if v, ok := obj["result"]; ok {
+		hasResult = strings.TrimSpace(string(v)) != ""
+	}
+	hasError := false
+	if v, ok := obj["error"]; ok {
+		hasError = strings.TrimSpace(string(v)) != ""
+	}
+
+	var id any
+	hasID := false
+	if idRaw, ok := obj["id"]; ok {
+		hasID = true
+		_ = json.Unmarshal(idRaw, &id)
+	}
+
+	if hasMethod {
+		if req.Method == "" {
+			return messageKindInvalid, req, id, nil
+		}
+		if req.ID == nil {
+			return messageKindNotification, req, id, nil
+		}
+		return messageKindRequest, req, req.ID, nil
+	}
+
+	if (hasResult || hasError) && hasID && id != nil {
+		return messageKindResponse, req, id, nil
+	}
+
+	return messageKindInvalid, req, id, nil
+}
+
+func parseAcceptTypes(accept string) (bool, bool) {
+	return hasAcceptType(accept, "application/json"), hasAcceptType(accept, "text/event-stream")
+}
+
+func hasAcceptType(accept, target string) bool {
+	if strings.TrimSpace(accept) == "" {
+		return false
+	}
+	target = strings.ToLower(strings.TrimSpace(target))
+	for _, part := range strings.Split(accept, ",") {
+		media, params, err := mime.ParseMediaType(strings.TrimSpace(part))
+		if err != nil {
+			continue
+		}
+		if q, ok := params["q"]; ok {
+			qv, err := strconv.ParseFloat(strings.TrimSpace(q), 64)
+			if err != nil || qv <= 0 {
+				continue
+			}
+		}
+		media = strings.ToLower(strings.TrimSpace(media))
+		if media == target || media == "*/*" {
+			return true
+		}
+		if strings.HasSuffix(media, "/*") {
+			prefix := strings.TrimSuffix(media, "/*") + "/"
+			if strings.HasPrefix(target, prefix) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func isJSONContentType(contentType string) bool {
+	normalized := strings.ToLower(strings.TrimSpace(contentType))
+	if normalized == "" {
+		return false
+	}
+	parts := strings.Split(normalized, ";")
+	return strings.TrimSpace(parts[0]) == "application/json"
+}
+
+func (t *HTTPTransport) validateExistingSession(r *http.Request) error {
+	if err := t.ensureProtocolVersion(r.Header.Get(mcp.ProtocolVersionHeader)); err != nil {
+		return err
+	}
+	sessionID := r.Header.Get(mcp.SessionIDHeader)
+	if sessionID == "" {
+		return errors.New("missing MCP session header")
+	}
+	if !t.sessionExists(sessionID) {
+		return errUnknownSession
+	}
+	return nil
+}
+
 func (t *HTTPTransport) resolveSessionForRequest(r *http.Request, req mcp.Request) (string, error) {
 	isInitialize := req.Method == "initialize"
 
@@ -334,10 +483,7 @@ func (t *HTTPTransport) resolveSessionForRequest(r *http.Request, req mcp.Reques
 	sessionID := r.Header.Get(mcp.SessionIDHeader)
 	if isInitialize {
 		if sessionID != "" {
-			if !t.sessionExists(sessionID) {
-				return "", errUnknownSession
-			}
-			return sessionID, nil
+			return "", errors.New("initialize must not include MCP session header")
 		}
 		created, err := generateSessionID()
 		if err != nil {
@@ -357,7 +503,11 @@ func (t *HTTPTransport) resolveSessionForRequest(r *http.Request, req mcp.Reques
 }
 
 func (t *HTTPTransport) ensureProtocolVersion(version string) error {
-	if version == "" || version == mcp.LegacyProtocolVersion || version == mcp.ProtocolVersion {
+	version = strings.TrimSpace(version)
+	if version == "" {
+		return errors.New("missing MCP protocol version header")
+	}
+	if version == mcp.LegacyProtocolVersion || version == mcp.ProtocolVersion {
 		return nil
 	}
 	return fmt.Errorf("unsupported MCP protocol version: %s", version)
@@ -439,18 +589,20 @@ func (t *HTTPTransport) startSSEStream(w http.ResponseWriter, r *http.Request, s
 	w.Header().Set(mcp.SessionIDHeader, sessionID)
 
 	lastEventID := r.Header.Get("Last-Event-ID")
-	eventID := 0
 	if lastEventID != "" {
-		if id, err := strconv.Atoi(lastEventID); err == nil {
-			eventID = id + 1
+		resumedSessionID, counter, ok := parseLastEventID(lastEventID)
+		if !ok || resumedSessionID != sessionID {
+			http.Error(w, "Invalid Last-Event-ID", http.StatusBadRequest)
+			return nil
 		}
+		t.setEventCounter(sessionID, counter)
 	}
 
 	session := &SSESession{
-		ID:      sessionID,
-		writer:  w,
-		flusher: flusher,
-		eventID: eventID,
+		ID:          sessionID,
+		writer:      w,
+		flusher:     flusher,
+		nextEventID: t.nextEventIDGenerator(sessionID),
 	}
 
 	t.mu.Lock()
@@ -463,6 +615,39 @@ func (t *HTTPTransport) startSSEStream(w http.ResponseWriter, r *http.Request, s
 	})
 
 	return session
+}
+
+func (t *HTTPTransport) nextEventIDGenerator(streamID string) func() string {
+	return func() string {
+		t.mu.Lock()
+		next := t.eventCounters[streamID] + 1
+		t.eventCounters[streamID] = next
+		t.mu.Unlock()
+		return fmt.Sprintf("%s:%d", streamID, next)
+	}
+}
+
+func parseLastEventID(lastEventID string) (string, uint64, bool) {
+	parts := strings.Split(lastEventID, ":")
+	if len(parts) != 2 {
+		return "", 0, false
+	}
+	if parts[0] == "" {
+		return "", 0, false
+	}
+	value, err := strconv.ParseUint(parts[1], 10, 64)
+	if err != nil {
+		return "", 0, false
+	}
+	return parts[0], value, true
+}
+
+func (t *HTTPTransport) setEventCounter(streamID string, value uint64) {
+	t.mu.Lock()
+	if t.eventCounters[streamID] < value {
+		t.eventCounters[streamID] = value
+	}
+	t.mu.Unlock()
 }
 
 func (t *HTTPTransport) sendError(w http.ResponseWriter, id any, code int, message string, data any) {
@@ -499,7 +684,7 @@ func (s *SSESession) sendEvent(eventType string, data any) error {
 	}
 
 	// Write SSE event - ensure UTF-8 encoding
-	fmt.Fprintf(s.writer, "id: %d\n", s.eventID)
+	fmt.Fprintf(s.writer, "id: %s\n", s.nextEventID())
 	if eventType != "" {
 		fmt.Fprintf(s.writer, "event: %s\n", eventType)
 	}
@@ -512,7 +697,6 @@ func (s *SSESession) sendEvent(eventType string, data any) error {
 	fmt.Fprintf(s.writer, "\n")
 
 	s.flusher.Flush()
-	s.eventID++
 
 	return nil
 }

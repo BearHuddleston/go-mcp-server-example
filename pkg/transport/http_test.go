@@ -59,6 +59,7 @@ func TestHandlePostInitializeSetsSessionHeader(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodPost, "/mcp", bytes.NewReader(body))
 	req.Header.Set("Accept", "application/json, text/event-stream")
+	req.Header.Set("Content-Type", "application/json")
 
 	rr := httptest.NewRecorder()
 	tx.handlePost(context.Background(), &httpMockServer{}, rr, req)
@@ -75,6 +76,7 @@ func TestHandlePostRejectsBatchRequests(t *testing.T) {
 	tx := newHTTPTransportForTest()
 	req := httptest.NewRequest(http.MethodPost, "/mcp", bytes.NewReader([]byte(`[{"jsonrpc":"2.0","method":"initialize","id":1}]`)))
 	req.Header.Set("Accept", "application/json, text/event-stream")
+	req.Header.Set("Content-Type", "application/json")
 
 	rr := httptest.NewRecorder()
 	tx.handlePost(context.Background(), &httpMockServer{}, rr, req)
@@ -94,6 +96,7 @@ func TestHandlePostRequiresSessionAfterInitialize(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodPost, "/mcp", bytes.NewReader(body))
 	req.Header.Set("Accept", "application/json, text/event-stream")
+	req.Header.Set("Content-Type", "application/json")
 
 	rr := httptest.NewRecorder()
 	tx.handlePost(context.Background(), &httpMockServer{}, rr, req)
@@ -113,6 +116,7 @@ func TestHandlePostRejectsUnsupportedProtocolHeader(t *testing.T) {
 
 	initHTTPReq := httptest.NewRequest(http.MethodPost, "/mcp", bytes.NewReader(initBytes))
 	initHTTPReq.Header.Set("Accept", "application/json, text/event-stream")
+	initHTTPReq.Header.Set("Content-Type", "application/json")
 	initRecorder := httptest.NewRecorder()
 	tx.handlePost(context.Background(), &httpMockServer{}, initRecorder, initHTTPReq)
 	sessionID := initRecorder.Header().Get(mcp.SessionIDHeader)
@@ -128,6 +132,7 @@ func TestHandlePostRejectsUnsupportedProtocolHeader(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodPost, "/mcp", bytes.NewReader(body))
 	req.Header.Set("Accept", "application/json, text/event-stream")
+	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set(mcp.SessionIDHeader, sessionID)
 	req.Header.Set(mcp.ProtocolVersionHeader, "2099-01-01")
 
@@ -136,5 +141,101 @@ func TestHandlePostRejectsUnsupportedProtocolHeader(t *testing.T) {
 
 	if rr.Code != http.StatusBadRequest {
 		t.Fatalf("expected status 400, got %d", rr.Code)
+	}
+}
+
+func TestHandlePostRequiresContentType(t *testing.T) {
+	tx := newHTTPTransportForTest()
+	reqBody := mcp.Request{JSONRPC: mcp.JSONRPCVersion, Method: "initialize", ID: 1}
+	body, err := json.Marshal(reqBody)
+	if err != nil {
+		t.Fatalf("marshal request: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/mcp", bytes.NewReader(body))
+	req.Header.Set("Accept", "application/json, text/event-stream")
+
+	rr := httptest.NewRecorder()
+	tx.handlePost(context.Background(), &httpMockServer{}, rr, req)
+
+	if rr.Code != http.StatusUnsupportedMediaType {
+		t.Fatalf("expected status 415, got %d", rr.Code)
+	}
+}
+
+func TestHandlePostRequiresBothAcceptTypes(t *testing.T) {
+	tx := newHTTPTransportForTest()
+	reqBody := mcp.Request{JSONRPC: mcp.JSONRPCVersion, Method: "initialize", ID: 1}
+	body, err := json.Marshal(reqBody)
+	if err != nil {
+		t.Fatalf("marshal request: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/mcp", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json")
+
+	rr := httptest.NewRecorder()
+	tx.handlePost(context.Background(), &httpMockServer{}, rr, req)
+
+	if rr.Code != http.StatusNotAcceptable {
+		t.Fatalf("expected status 406, got %d", rr.Code)
+	}
+}
+
+func TestHandlePostRejectsMultipleMessages(t *testing.T) {
+	tx := newHTTPTransportForTest()
+	body := []byte(`{"jsonrpc":"2.0","method":"initialize","id":1}{"jsonrpc":"2.0","method":"initialize","id":2}`)
+	req := httptest.NewRequest(http.MethodPost, "/mcp", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json, text/event-stream")
+
+	rr := httptest.NewRecorder()
+	tx.handlePost(context.Background(), &httpMockServer{}, rr, req)
+
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("expected status 400, got %d", rr.Code)
+	}
+}
+
+func TestHandlePostRejectsInitializeWithSessionHeader(t *testing.T) {
+	tx := newHTTPTransportForTest()
+	tx.registerSession("existing-session")
+	reqBody := mcp.Request{JSONRPC: mcp.JSONRPCVersion, Method: "initialize", ID: 1}
+	body, err := json.Marshal(reqBody)
+	if err != nil {
+		t.Fatalf("marshal request: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/mcp", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json, text/event-stream")
+	req.Header.Set(mcp.SessionIDHeader, "existing-session")
+
+	rr := httptest.NewRecorder()
+	tx.handlePost(context.Background(), &httpMockServer{}, rr, req)
+
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("expected status 400, got %d", rr.Code)
+	}
+}
+
+func TestHandlePostAcceptParsingSupportsQValues(t *testing.T) {
+	tx := newHTTPTransportForTest()
+	reqBody := mcp.Request{JSONRPC: mcp.JSONRPCVersion, Method: "initialize", ID: 1}
+	body, err := json.Marshal(reqBody)
+	if err != nil {
+		t.Fatalf("marshal request: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/mcp", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json;q=1.0, text/event-stream;q=0.9")
+
+	rr := httptest.NewRecorder()
+	tx.handlePost(context.Background(), &httpMockServer{}, rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", rr.Code)
 	}
 }
