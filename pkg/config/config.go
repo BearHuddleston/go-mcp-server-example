@@ -13,6 +13,7 @@ type Config struct {
 	// Transport settings
 	TransportType string
 	HTTPPort      int
+	SpecPath      string
 
 	// Server settings
 	ServerName    string
@@ -51,6 +52,7 @@ func ParseFlags() (*Config, error) {
 
 	transportType := flag.String("transport", cfg.TransportType, "Transport type: stdio or http")
 	port := flag.Int("port", cfg.HTTPPort, "Port for HTTP transport (ignored for stdio)")
+	specPath := flag.String("spec", cfg.SpecPath, "Path to JSON MCP spec used to configure handlers")
 	requestTimeout := flag.Duration("request-timeout", cfg.RequestTimeout, "Request timeout duration")
 	allowedOrigins := flag.String("allowed-origins", "", "Comma-separated list of allowed CORS origins (e.g., https://example.com,https://api.example.com)")
 
@@ -58,6 +60,7 @@ func ParseFlags() (*Config, error) {
 
 	cfg.TransportType = *transportType
 	cfg.HTTPPort = *port
+	cfg.SpecPath = strings.TrimSpace(*specPath)
 	cfg.RequestTimeout = *requestTimeout
 	if *allowedOrigins != "" {
 		cfg.AllowedOrigins = parseAllowedOrigins(*allowedOrigins)

@@ -62,6 +62,19 @@ func TestRunWithInvalidTransportConfig(t *testing.T) {
 	}
 }
 
+func TestRunWithMissingSpecFile(t *testing.T) {
+	cfg := config.New()
+	cfg.SpecPath = "/path/that/does/not/exist.json"
+
+	err := run(cfg)
+	if err == nil {
+		t.Fatal("expected run with missing spec file to fail")
+	}
+	if !strings.Contains(err.Error(), "failed to load spec") {
+		t.Fatalf("expected wrapped spec load error, got %v", err)
+	}
+}
+
 func TestRunWithStdioEOF(t *testing.T) {
 	r, w, err := os.Pipe()
 	if err != nil {
@@ -78,6 +91,8 @@ func TestRunWithStdioEOF(t *testing.T) {
 	cfg := config.New()
 	cfg.TransportType = "stdio"
 	cfg.RequestTimeout = 50 * time.Millisecond
+	specPath := createTestSpecFile(t)
+	cfg.SpecPath = specPath
 
 	if err := w.Close(); err != nil {
 		t.Fatalf("failed to close stdin writer: %v", err)
@@ -87,6 +102,37 @@ func TestRunWithStdioEOF(t *testing.T) {
 	if err != nil {
 		t.Fatalf("expected run to exit cleanly on EOF stdin, got %v", err)
 	}
+}
+
+func createTestSpecFile(t *testing.T) string {
+	t.Helper()
+
+	path := t.TempDir() + "/mcp-spec.json"
+	content := `{
+  "schemaVersion": "v1",
+  "server": {"name": "Template MCP", "version": "1.0.0"},
+  "runtime": {"transportType": "stdio"},
+  "items": [
+    {"name": "Item A", "price": 5, "category": "starter", "description": "First item"}
+  ],
+  "tools": [
+    {"mode": "list_items", "name": "listItems", "description": "List items", "inputSchema": {"type": "object", "properties": {}, "required": []}},
+    {"mode": "get_item_details", "name": "getItemDetails", "description": "Get item details", "inputSchema": {"type": "object", "properties": {"name": {"type": "string"}}, "required": ["name"]}}
+  ],
+  "resources": [
+    {"mode": "catalog_items", "uri": "catalog://items", "name": "catalog"}
+  ],
+  "prompts": [
+    {"mode": "plan_recommendation", "name": "planRecommendation", "description": "Plan prompt", "arguments": [{"name": "budget", "description": "Budget", "required": false}], "template": "Plan for a team%s%s"},
+    {"mode": "item_brief", "name": "itemBrief", "description": "Brief prompt", "arguments": [{"name": "item_name", "description": "Item", "required": true}], "template": "Brief for %s"}
+  ]
+}`
+
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatalf("failed to write test spec file: %v", err)
+	}
+
+	return path
 }
 
 func TestExecute(t *testing.T) {

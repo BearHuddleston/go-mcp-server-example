@@ -13,6 +13,7 @@ import (
 	"github.com/BearHuddleston/mcp-server-example/internal/server"
 	"github.com/BearHuddleston/mcp-server-example/pkg/config"
 	"github.com/BearHuddleston/mcp-server-example/pkg/handlers"
+	"github.com/BearHuddleston/mcp-server-example/pkg/spec"
 	"github.com/BearHuddleston/mcp-server-example/pkg/transport"
 )
 
@@ -49,6 +50,17 @@ func execute(parseFlags func() (*config.Config, error), runServer func(*config.C
 // run starts and runs the MCP server with the given configuration
 func run(cfg *config.Config) error {
 	catalogHandler := handlers.NewCatalog()
+	if cfg != nil && cfg.SpecPath != "" {
+		sp, err := spec.LoadFile(cfg.SpecPath)
+		if err != nil {
+			return fmt.Errorf("failed to load spec: %w", err)
+		}
+
+		catalogHandler, err = handlers.NewCatalogFromSpec(sp)
+		if err != nil {
+			return fmt.Errorf("failed to create catalog from spec: %w", err)
+		}
+	}
 
 	mcpServer, err := server.New(cfg, catalogHandler, catalogHandler, catalogHandler)
 	if err != nil {

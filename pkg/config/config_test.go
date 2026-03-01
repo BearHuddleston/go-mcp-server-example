@@ -90,11 +90,14 @@ func TestParseFlags(t *testing.T) {
 				if cfg.RequestTimeout != 30*time.Second {
 					t.Errorf("Expected RequestTimeout 30s, got %v", cfg.RequestTimeout)
 				}
+				if cfg.SpecPath != "" {
+					t.Errorf("Expected empty SpecPath by default, got %q", cfg.SpecPath)
+				}
 			},
 		},
 		{
 			name:    "custom values",
-			args:    []string{"-transport", "http", "-port", "9000", "-request-timeout", "60s", "-allowed-origins", " https://example.com, ,http://localhost:* "},
+			args:    []string{"-transport", "http", "-port", "9000", "-spec", " ./mcp-spec.json ", "-request-timeout", "60s", "-allowed-origins", " https://example.com, ,http://localhost:* "},
 			wantErr: false,
 			validate: func(t *testing.T, cfg *Config) {
 				if cfg.TransportType != "http" {
@@ -105,6 +108,9 @@ func TestParseFlags(t *testing.T) {
 				}
 				if cfg.RequestTimeout != 60*time.Second {
 					t.Errorf("Expected RequestTimeout 60s, got %v", cfg.RequestTimeout)
+				}
+				if cfg.SpecPath != "./mcp-spec.json" {
+					t.Errorf("Expected SpecPath ./mcp-spec.json, got %q", cfg.SpecPath)
 				}
 				if len(cfg.AllowedOrigins) != 2 {
 					t.Fatalf("Expected 2 allowed origins, got %d", len(cfg.AllowedOrigins))

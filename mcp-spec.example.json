@@ -1,0 +1,104 @@
+{
+  "schemaVersion": "v1",
+  "server": {
+    "name": "MCP Example Server",
+    "version": "1.0.0"
+  },
+  "runtime": {
+    "transportType": "stdio",
+    "httpPort": 8080,
+    "requestTimeout": "30s",
+    "allowedOrigins": [
+      "http://localhost:*",
+      "http://127.0.0.1:*"
+    ]
+  },
+  "items": [
+    {
+      "name": "Workspace Automation Pack",
+      "price": 5,
+      "category": "automation",
+      "description": "A starter package for automating repetitive engineering tasks."
+    },
+    {
+      "name": "Incident Triage Guide",
+      "price": 6,
+      "category": "operations",
+      "description": "A practical guide for diagnosing and resolving production incidents."
+    },
+    {
+      "name": "Performance Review Bundle",
+      "price": 7,
+      "category": "analysis",
+      "description": "A toolkit for profiling, benchmarking, and optimization planning."
+    }
+  ],
+  "tools": [
+    {
+      "mode": "list_items",
+      "name": "listItems",
+      "description": "List all item names in the catalog",
+      "inputSchema": {
+        "type": "object",
+        "properties": {},
+        "required": []
+      }
+    },
+    {
+      "mode": "get_item_details",
+      "name": "getItemDetails",
+      "description": "Get detailed information for a catalog item",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ]
+      }
+    }
+  ],
+  "resources": [
+    {
+      "mode": "catalog_items",
+      "uri": "catalog://items",
+      "name": "catalog"
+    }
+  ],
+  "prompts": [
+    {
+      "mode": "plan_recommendation",
+      "name": "planRecommendation",
+      "description": "Get a recommendation for which catalog item to use",
+      "arguments": [
+        {
+          "name": "budget",
+          "description": "Budget available in dollars",
+          "required": false
+        },
+        {
+          "name": "goal",
+          "description": "Primary goal, for example reliability or speed",
+          "required": false
+        }
+      ],
+      "template": "You are a systems advisor. Recommend the best option for a team%s%s."
+    },
+    {
+      "mode": "item_brief",
+      "name": "itemBrief",
+      "description": "Get a concise brief for a specific catalog item",
+      "arguments": [
+        {
+          "name": "item_name",
+          "description": "Name of the item to summarize",
+          "required": true
+        }
+      ],
+      "template": "Provide a concise brief for %s, including what it is, best use cases, risks, and quick start steps."
+    }
+  ]
+}

@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/BearHuddleston/mcp-server-example/pkg/mcp"
+	"github.com/BearHuddleston/mcp-server-example/pkg/spec"
 )
 
 func TestCatalogHandler(t *testing.T) {
@@ -179,6 +180,99 @@ func TestCatalogHandler(t *testing.T) {
 		_, err = handler.GetPrompt(ctx, mcp.PromptParams{Name: "unknown", Arguments: map[string]any{}})
 		if err == nil {
 			t.Fatal("Expected error for unknown prompt")
+		}
+	})
+}
+
+func TestNewCatalogFromSpec(t *testing.T) {
+	t.Run("nil spec", func(t *testing.T) {
+		_, err := NewCatalogFromSpec(nil)
+		if err == nil {
+			t.Fatal("expected error for nil spec")
+		}
+	})
+
+	t.Run("maps tools resources and prompts", func(t *testing.T) {
+		sp := &spec.Spec{
+			SchemaVersion: "v1",
+			Items: []spec.ItemSpec{{
+				Name:        "Template Bundle",
+				Price:       9,
+				Category:    "starter",
+				Description: "Template-driven MCP starter kit.",
+			}},
+			Tools: []spec.ToolSpec{
+				{
+					Mode:        "list_items",
+					Name:        "listCatalog",
+					Description: "List names from catalog",
+					InputSchema: mcp.InputSchema{Type: "object", Properties: map[string]any{}, Required: []string{}},
+				},
+				{
+					Mode:        "get_item_details",
+					Name:        "fetchDetails",
+					Description: "Get details for selected item",
+					InputSchema: mcp.InputSchema{Type: "object", Properties: map[string]any{"item_name": map[string]string{"type": "string"}}, Required: []string{"item_name"}},
+				},
+			},
+			Resources: []spec.ResourceSpec{{Mode: "catalog_items", URI: "catalog://custom-items", Name: "custom-catalog"}},
+			Prompts: []spec.PromptSpec{
+				{
+					Mode:        "plan_recommendation",
+					Name:        "buildPlan",
+					Description: "Build a recommendation",
+					Arguments: []mcp.PromptArgument{
+						{Name: "budget", Description: "Max budget", Required: false},
+						{Name: "goal", Description: "Primary goal", Required: false},
+					},
+					Template: "Plan for a team%s%s",
+				},
+				{
+					Mode:        "item_brief",
+					Name:        "quickBrief",
+					Description: "Write item brief",
+					Arguments:   []mcp.PromptArgument{{Name: "target_item", Description: "Item to summarize", Required: true}},
+					Template:    "Brief for %s",
+				},
+			},
+		}
+
+		h, err := NewCatalogFromSpec(sp)
+		if err != nil {
+			t.Fatalf("NewCatalogFromSpec failed: %v", err)
+		}
+
+		ctx := context.Background()
+		tools, err := h.ListTools(ctx)
+		if err != nil {
+			t.Fatalf("ListTools failed: %v", err)
+		}
+		if len(tools) != 2 || tools[0].Name != "listCatalog" || tools[1].Name != "fetchDetails" {
+			t.Fatalf("unexpected tools: %+v", tools)
+		}
+
+		toolResp, err := h.CallTool(ctx, mcp.ToolCallParams{Name: "fetchDetails", Arguments: map[string]any{"item_name": "Template Bundle"}})
+		if err != nil {
+			t.Fatalf("CallTool fetchDetails failed: %v", err)
+		}
+		if len(toolResp.Content) != 1 || !strings.Contains(toolResp.Content[0].Text, "Template Bundle") {
+			t.Fatalf("unexpected tool response: %+v", toolResp.Content)
+		}
+
+		resources, err := h.ListResources(ctx)
+		if err != nil {
+			t.Fatalf("ListResources failed: %v", err)
+		}
+		if len(resources) != 1 || resources[0].URI != "catalog://custom-items" {
+			t.Fatalf("unexpected resources: %+v", resources)
+		}
+
+		promptResp, err := h.GetPrompt(ctx, mcp.PromptParams{Name: "quickBrief", Arguments: map[string]any{"target_item": "Template Bundle"}})
+		if err != nil {
+			t.Fatalf("GetPrompt failed: %v", err)
+		}
+		if len(promptResp.Messages) != 1 || !strings.Contains(promptResp.Messages[0].Content.Text, "Template Bundle") {
+			t.Fatalf("unexpected prompt response: %+v", promptResp.Messages)
 		}
 	})
 }

@@ -6,7 +6,9 @@ import (
 	"testing"
 
 	"github.com/BearHuddleston/mcp-server-example/pkg/config"
+	"github.com/BearHuddleston/mcp-server-example/pkg/handlers"
 	"github.com/BearHuddleston/mcp-server-example/pkg/mcp"
+	"github.com/BearHuddleston/mcp-server-example/pkg/spec"
 )
 
 type testToolHandler struct {
@@ -177,6 +179,61 @@ func TestHandleRequestDispatchSuccess(t *testing.T) {
 	}
 	if prompt.last.Name != "promptA" || prompt.last.Arguments["k"] != "v" {
 		t.Fatalf("unexpected prompt params captured: %+v", prompt.last)
+	}
+}
+
+func TestHandleRequestToolsListWithSpecBackedCatalog(t *testing.T) {
+	sp := &spec.Spec{
+		SchemaVersion: "v1",
+		Runtime:       spec.RuntimeSpec{TransportType: "stdio"},
+		Items: []spec.ItemSpec{{
+			Name:        "Template Bundle",
+			Price:       9,
+			Category:    "starter",
+			Description: "Template-driven MCP starter kit.",
+		}},
+		Tools: []spec.ToolSpec{
+			{Mode: "list_items", Name: "listCatalog", Description: "List item names", InputSchema: mcp.InputSchema{Type: "object", Properties: map[string]any{}, Required: []string{}}},
+			{Mode: "get_item_details", Name: "fetchDetails", Description: "Fetch item details", InputSchema: mcp.InputSchema{Type: "object", Properties: map[string]any{"item_name": map[string]string{"type": "string"}}, Required: []string{"item_name"}}},
+		},
+		Resources: []spec.ResourceSpec{{Mode: "catalog_items", URI: "catalog://custom-items", Name: "custom-catalog"}},
+		Prompts: []spec.PromptSpec{
+			{Mode: "plan_recommendation", Name: "buildPlan", Description: "Build recommendation", Template: "Plan for team%s%s"},
+			{Mode: "item_brief", Name: "quickBrief", Description: "Create brief", Template: "Brief for %s"},
+		},
+	}
+
+	catalog, err := handlers.NewCatalogFromSpec(sp)
+	if err != nil {
+		t.Fatalf("NewCatalogFromSpec failed: %v", err)
+	}
+
+	srv, err := New(newTestConfig(), catalog, catalog, catalog)
+	if err != nil {
+		t.Fatalf("New failed: %v", err)
+	}
+
+	sender := &captureSender{}
+	ctx := context.WithValue(context.Background(), mcp.ResponseSenderKey, sender)
+	req := mcp.Request{JSONRPC: mcp.JSONRPCVersion, Method: "tools/list", ID: 99}
+
+	if err := srv.HandleRequest(ctx, req); err != nil {
+		t.Fatalf("HandleRequest failed: %v", err)
+	}
+	if sender.response == nil {
+		t.Fatal("expected tools/list response")
+	}
+
+	result, ok := sender.response.Result.(map[string][]mcp.Tool)
+	if !ok {
+		t.Fatalf("expected map[string][]mcp.Tool result, got %T", sender.response.Result)
+	}
+	toolsAny := result["tools"]
+	if len(toolsAny) != 2 {
+		t.Fatalf("expected 2 tools, got %d", len(toolsAny))
+	}
+	if toolsAny[0].Name != "listCatalog" || toolsAny[1].Name != "fetchDetails" {
+		t.Fatalf("expected spec-driven tool names, got %+v", toolsAny)
 	}
 }
 
