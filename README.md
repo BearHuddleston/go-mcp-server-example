@@ -16,6 +16,27 @@ go build -o mcp-template-server ./cmd/mcpserver
 ./mcp-template-server -spec ./mcp-spec.example.json
 ```
 
+## Security Recommendation
+
+For production or shared environments, prefer running this server in Docker instead of directly on the host.
+
+Why:
+- Container isolation reduces host-level blast radius.
+- You can enforce runtime restrictions (`--read-only`, dropped capabilities, no-new-privileges).
+- Deployment is more reproducible across environments.
+
+Hardened container example:
+
+```bash
+docker run --rm -p 8080:8080 \
+  --read-only \
+  --cap-drop=ALL \
+  --security-opt=no-new-privileges:true \
+  -v "$(pwd)/mcp-spec.example.json:/root/mcp-spec.example.json:ro" \
+  mcp-template-server:local \
+  ./mcp-template-server --transport http --port 8080 --spec /root/mcp-spec.example.json
+```
+
 ## Onboarding Workflow
 
 1. Agent asks the human what MCP server they want to build (tools, resources, prompts, and item data).
