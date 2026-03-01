@@ -333,3 +333,61 @@ func TestStartReturnsListenError(t *testing.T) {
 		t.Fatalf("expected startup failure error, got %v", err)
 	}
 }
+
+func TestEnsureProtocolVersion(t *testing.T) {
+	tx := newHTTPTransportForTest()
+
+	if err := tx.ensureProtocolVersion(""); err == nil {
+		t.Fatal("expected missing protocol version to fail")
+	}
+	if err := tx.ensureProtocolVersion("2099-01-01"); err == nil {
+		t.Fatal("expected unsupported protocol version to fail")
+	}
+	if err := tx.ensureProtocolVersion(mcp.ProtocolVersion); err != nil {
+		t.Fatalf("expected current protocol version to pass: %v", err)
+	}
+	if err := tx.ensureProtocolVersion(mcp.LegacyProtocolVersion); err != nil {
+		t.Fatalf("expected legacy protocol version to pass: %v", err)
+	}
+}
+
+func TestValidateExistingSession(t *testing.T) {
+	tx := newHTTPTransportForTest()
+	req := httptest.NewRequest(http.MethodPost, "/mcp", nil)
+
+	if err := tx.validateExistingSession(req); err == nil {
+		t.Fatal("expected validation error when headers are missing")
+	}
+
+	req.Header.Set(mcp.ProtocolVersionHeader, mcp.ProtocolVersion)
+	req.Header.Set(mcp.SessionIDHeader, "missing-session")
+	if err := tx.validateExistingSession(req); err == nil {
+		t.Fatal("expected unknown session validation error")
+	}
+
+	tx.registerSession("known-session")
+	req.Header.Set(mcp.SessionIDHeader, "known-session")
+	if err := tx.validateExistingSession(req); err != nil {
+		t.Fatalf("expected known session validation success: %v", err)
+	}
+}
+
+func TestParseLastEventID(t *testing.T) {
+	streamID, seq, ok := parseLastEventID("abc:123")
+	if !ok || streamID != "abc" || seq != 123 {
+		t.Fatalf("expected valid event id parse, got (%s, %d, %v)", streamID, seq, ok)
+	}
+
+	if _, _, ok := parseLastEventID(""); ok {
+		t.Fatal("expected empty event id to fail")
+	}
+	if _, _, ok := parseLastEventID("abc"); ok {
+		t.Fatal("expected event id missing separator to fail")
+	}
+	if _, _, ok := parseLastEventID(":123"); ok {
+		t.Fatal("expected empty stream id to fail")
+	}
+	if _, _, ok := parseLastEventID("abc:notanumber"); ok {
+		t.Fatal("expected non-numeric sequence to fail")
+	}
+}
