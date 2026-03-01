@@ -2,6 +2,7 @@
 package transport
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"encoding/hex"
@@ -371,40 +372,24 @@ const (
 )
 
 func classifyJSONRPCMessage(raw json.RawMessage) (messageKind, mcp.Request, any, error) {
-	var req mcp.Request
-	if err := json.Unmarshal(raw, &req); err != nil {
-		return messageKindInvalid, mcp.Request{}, nil, err
-	}
-
 	var obj map[string]json.RawMessage
 	if err := json.Unmarshal(raw, &obj); err != nil {
 		return messageKindInvalid, mcp.Request{}, nil, err
 	}
 
-	hasMethod := false
-	if methodRaw, ok := obj["method"]; ok {
-		method := strings.TrimSpace(string(methodRaw))
-		hasMethod = method != "" && method != "null" && method != `""`
-	}
+	methodRaw, hasMethod := obj["method"]
+	hasMethod = hasMethod && rawMessagePresent(methodRaw)
+	hasResult := rawMessagePresent(obj["result"])
+	hasError := rawMessagePresent(obj["error"])
 
-	hasResult := false
-	if v, ok := obj["result"]; ok {
-		hasResult = strings.TrimSpace(string(v)) != ""
-	}
-	hasError := false
-	if v, ok := obj["error"]; ok {
-		hasError = strings.TrimSpace(string(v)) != ""
-	}
-
-	var id any
-	hasID := false
-	if idRaw, ok := obj["id"]; ok {
-		hasID = true
-		_ = json.Unmarshal(idRaw, &id)
-	}
+	id, hasID := extractID(obj)
 
 	if hasMethod {
-		if req.Method == "" {
+		var req mcp.Request
+		if err := json.Unmarshal(raw, &req); err != nil {
+			return messageKindInvalid, mcp.Request{}, nil, err
+		}
+		if strings.TrimSpace(req.Method) == "" {
 			return messageKindInvalid, req, id, nil
 		}
 		if req.ID == nil {
@@ -414,13 +399,54 @@ func classifyJSONRPCMessage(raw json.RawMessage) (messageKind, mcp.Request, any,
 	}
 
 	if (hasResult || hasError) && hasID && id != nil {
-		return messageKindResponse, req, id, nil
+		return messageKindResponse, mcp.Request{JSONRPC: extractJSONString(obj, "jsonrpc")}, id, nil
 	}
 
-	return messageKindInvalid, req, id, nil
+	return messageKindInvalid, mcp.Request{JSONRPC: extractJSONString(obj, "jsonrpc")}, id, nil
+}
+
+func extractJSONString(obj map[string]json.RawMessage, key string) string {
+	raw, ok := obj[key]
+	if !ok || !rawMessagePresent(raw) {
+		return ""
+	}
+
+	var value string
+	if err := json.Unmarshal(raw, &value); err != nil {
+		return ""
+	}
+
+	return strings.TrimSpace(value)
+}
+
+func extractID(obj map[string]json.RawMessage) (any, bool) {
+	idRaw, ok := obj["id"]
+	if !ok {
+		return nil, false
+	}
+
+	var id any
+	if err := json.Unmarshal(idRaw, &id); err != nil {
+		return nil, true
+	}
+
+	return id, true
+}
+
+func rawMessagePresent(raw json.RawMessage) bool {
+	raw = bytes.TrimSpace(raw)
+	return len(raw) != 0
 }
 
 func parseAcceptTypes(accept string) (bool, bool) {
+	trimmed := strings.TrimSpace(accept)
+	switch trimmed {
+	case "application/json, text/event-stream", "text/event-stream, application/json":
+		return true, true
+	case "application/json;q=1.0, text/event-stream;q=0.9":
+		return true, true
+	}
+
 	return hasAcceptType(accept, "application/json"), hasAcceptType(accept, "text/event-stream")
 }
 
