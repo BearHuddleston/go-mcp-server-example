@@ -110,6 +110,21 @@ func newTestConfig() *config.Config {
 	return &config.Config{ServerName: "test", ServerVersion: "1.0.0"}
 }
 
+func newServerWithHandlers(t *testing.T) (*Server, *testToolHandler, *testResourceHandler, *testPromptHandler) {
+	t.Helper()
+
+	tool := &testToolHandler{}
+	resource := &testResourceHandler{}
+	prompt := &testPromptHandler{}
+
+	srv, err := New(newTestConfig(), tool, resource, prompt)
+	if err != nil {
+		t.Fatalf("New failed: %v", err)
+	}
+
+	return srv, tool, resource, prompt
+}
+
 func TestNewValidation(t *testing.T) {
 	tool := &testToolHandler{}
 	resource := &testResourceHandler{}
@@ -130,13 +145,7 @@ func TestNewValidation(t *testing.T) {
 }
 
 func TestHandleRequestDispatchSuccess(t *testing.T) {
-	tool := &testToolHandler{}
-	resource := &testResourceHandler{}
-	prompt := &testPromptHandler{}
-	srv, err := New(newTestConfig(), tool, resource, prompt)
-	if err != nil {
-		t.Fatalf("New failed: %v", err)
-	}
+	srv, tool, resource, prompt := newServerWithHandlers(t)
 
 	tests := []mcp.Request{
 		{JSONRPC: mcp.JSONRPCVersion, Method: "initialize", ID: 1},
@@ -205,19 +214,25 @@ func TestHandleRequestErrors(t *testing.T) {
 }
 
 func TestSendWithoutSenderInContext(t *testing.T) {
-	tool := &testToolHandler{}
-	resource := &testResourceHandler{}
-	prompt := &testPromptHandler{}
-	srv, err := New(newTestConfig(), tool, resource, prompt)
-	if err != nil {
-		t.Fatalf("New failed: %v", err)
-	}
+	srv, _, _, _ := newServerWithHandlers(t)
 
 	if err := srv.sendResponse(context.Background(), 1, map[string]any{"ok": true}); err == nil {
 		t.Fatal("expected error for missing response sender")
 	}
 	if err := srv.sendError(context.Background(), 1, mcp.ErrorCodeInternalError, "x", nil); err == nil {
 		t.Fatal("expected error for missing response sender")
+	}
+}
+
+func TestSendWithWrongSenderTypeInContext(t *testing.T) {
+	srv, _, _, _ := newServerWithHandlers(t)
+
+	ctx := context.WithValue(context.Background(), mcp.ResponseSenderKey, "wrong-type")
+	if err := srv.sendResponse(ctx, 1, map[string]any{"ok": true}); err == nil {
+		t.Fatal("expected error for wrong response sender type")
+	}
+	if err := srv.sendError(ctx, 1, mcp.ErrorCodeInternalError, "x", nil); err == nil {
+		t.Fatal("expected error for wrong response sender type")
 	}
 }
 

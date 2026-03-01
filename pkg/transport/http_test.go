@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -17,6 +19,10 @@ import (
 
 type httpMockServer struct{}
 
+type httpMockServerNoResponse struct{}
+
+type httpMockServerError struct{}
+
 func (m *httpMockServer) Initialize(ctx context.Context) (*mcp.InitializeResponse, error) {
 	return &mcp.InitializeResponse{
 		ProtocolVersion: mcp.ProtocolVersion,
@@ -29,7 +35,10 @@ func (m *httpMockServer) Initialize(ctx context.Context) (*mcp.InitializeRespons
 }
 
 func (m *httpMockServer) HandleRequest(ctx context.Context, req mcp.Request) error {
-	sender := ctx.Value(mcp.ResponseSenderKey).(mcp.ResponseSender)
+	sender, ok := ctx.Value(mcp.ResponseSenderKey).(mcp.ResponseSender)
+	if !ok {
+		return fmt.Errorf("response sender missing or wrong type")
+	}
 	return sender.SendResponse(mcp.Response{
 		JSONRPC: mcp.JSONRPCVersion,
 		ID:      req.ID,
@@ -37,17 +46,58 @@ func (m *httpMockServer) HandleRequest(ctx context.Context, req mcp.Request) err
 	})
 }
 
-func newHTTPTransportForTest() *HTTPTransport {
-	cfg := &config.Config{
-		TransportType:   "http",
-		HTTPPort:        8080,
-		RequestTimeout:  time.Second,
-		ShutdownTimeout: time.Second,
-		ReadTimeout:     time.Second,
-		WriteTimeout:    time.Second,
-		IdleTimeout:     time.Second,
-		AllowedOrigins:  []string{"http://localhost:*"},
+func (m *httpMockServerNoResponse) Initialize(ctx context.Context) (*mcp.InitializeResponse, error) {
+	return (&httpMockServer{}).Initialize(ctx)
+}
+
+func (m *httpMockServerNoResponse) HandleRequest(ctx context.Context, req mcp.Request) error {
+	return nil
+}
+
+func (m *httpMockServerError) Initialize(ctx context.Context) (*mcp.InitializeResponse, error) {
+	return (&httpMockServer{}).Initialize(ctx)
+}
+
+func (m *httpMockServerError) HandleRequest(ctx context.Context, req mcp.Request) error {
+	return errors.New("boom")
+}
+
+type nonFlusherResponseWriter struct {
+	headers http.Header
+	status  int
+	body    bytes.Buffer
+}
+
+func (w *nonFlusherResponseWriter) Header() http.Header {
+	if w.headers == nil {
+		w.headers = make(http.Header)
 	}
+	return w.headers
+}
+
+func (w *nonFlusherResponseWriter) Write(p []byte) (int, error) {
+	return w.body.Write(p)
+}
+
+func (w *nonFlusherResponseWriter) WriteHeader(statusCode int) {
+	w.status = statusCode
+}
+
+func newHTTPTransportForTest(overrides ...func(*config.Config)) *HTTPTransport {
+	cfg := config.New()
+	cfg.TransportType = "http"
+	cfg.HTTPPort = 8080
+	cfg.RequestTimeout = time.Second
+	cfg.ShutdownTimeout = time.Second
+	cfg.ReadTimeout = time.Second
+	cfg.WriteTimeout = time.Second
+	cfg.IdleTimeout = time.Second
+	cfg.AllowedOrigins = []string{"http://localhost:*"}
+
+	for _, override := range overrides {
+		override(cfg)
+	}
+
 	return NewHTTP(cfg)
 }
 
@@ -255,18 +305,9 @@ func TestIsOriginAllowedDoesNotMatchSubstringHosts(t *testing.T) {
 }
 
 func TestOriginPatternEscapesRegexMetacharacters(t *testing.T) {
-	cfg := &config.Config{
-		TransportType:   "http",
-		HTTPPort:        8080,
-		RequestTimeout:  time.Second,
-		ShutdownTimeout: time.Second,
-		ReadTimeout:     time.Second,
-		WriteTimeout:    time.Second,
-		IdleTimeout:     time.Second,
-		AllowedOrigins:  []string{"https://api.example.com"},
-	}
-
-	tx := NewHTTP(cfg)
+	tx := newHTTPTransportForTest(func(cfg *config.Config) {
+		cfg.AllowedOrigins = []string{"https://api.example.com"}
+	})
 
 	if !tx.isOriginAllowed("https://api.example.com") {
 		t.Fatal("expected exact configured origin to be allowed")
@@ -310,18 +351,9 @@ func TestStartReturnsListenError(t *testing.T) {
 	defer ln.Close()
 
 	port := ln.Addr().(*net.TCPAddr).Port
-	cfg := &config.Config{
-		TransportType:   "http",
-		HTTPPort:        port,
-		RequestTimeout:  time.Second,
-		ShutdownTimeout: time.Second,
-		ReadTimeout:     time.Second,
-		WriteTimeout:    time.Second,
-		IdleTimeout:     time.Second,
-		AllowedOrigins:  []string{"http://localhost:*"},
-	}
-
-	tx := NewHTTP(cfg)
+	tx := newHTTPTransportForTest(func(cfg *config.Config) {
+		cfg.HTTPPort = port
+	})
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 
@@ -389,5 +421,208 @@ func TestParseLastEventID(t *testing.T) {
 	}
 	if _, _, ok := parseLastEventID("abc:notanumber"); ok {
 		t.Fatal("expected non-numeric sequence to fail")
+	}
+}
+
+func TestHTTPResponseSender(t *testing.T) {
+	rr := httptest.NewRecorder()
+	s := &HTTPResponseSender{writer: rr, sessionID: "session-1"}
+
+	err := s.SendResponse(mcp.Response{JSONRPC: mcp.JSONRPCVersion, ID: 1, Result: map[string]any{"ok": true}})
+	if err != nil {
+		t.Fatalf("SendResponse failed: %v", err)
+	}
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rr.Code)
+	}
+	if rr.Header().Get(mcp.SessionIDHeader) != "session-1" {
+		t.Fatalf("expected session header to be set")
+	}
+
+	err = s.SendResponse(mcp.Response{JSONRPC: mcp.JSONRPCVersion, ID: 2})
+	if err == nil {
+		t.Fatal("expected error on second response send")
+	}
+}
+
+func TestHTTPResponseSenderSendError(t *testing.T) {
+	rr := httptest.NewRecorder()
+	s := &HTTPResponseSender{writer: rr}
+
+	err := s.SendError(1, mcp.ErrorCodeInternalError, "oops", "data")
+	if err != nil {
+		t.Fatalf("SendError failed: %v", err)
+	}
+	if !strings.Contains(rr.Body.String(), "oops") {
+		t.Fatalf("expected body to contain error message, got %s", rr.Body.String())
+	}
+}
+
+func TestSSESessionSendEventAndError(t *testing.T) {
+	rr := httptest.NewRecorder()
+	session := &SSESession{
+		ID:      "session-1",
+		writer:  rr,
+		flusher: rr,
+		nextEventID: func() string {
+			return "session-1:1"
+		},
+	}
+
+	err := session.sendEvent("connected", map[string]any{"a": "b"})
+	if err != nil {
+		t.Fatalf("sendEvent failed: %v", err)
+	}
+
+	err = session.sendError(1, mcp.ErrorCodeInternalError, "boom", nil)
+	if err != nil {
+		t.Fatalf("sendError failed: %v", err)
+	}
+
+	body := rr.Body.String()
+	if !strings.Contains(body, "event: connected") || !strings.Contains(body, `"code":-32603`) {
+		t.Fatalf("unexpected SSE body: %s", body)
+	}
+
+	session.close()
+	err = session.sendEvent("connected", map[string]any{"a": "b"})
+	if err == nil {
+		t.Fatal("expected error when sending on closed session")
+	}
+}
+
+func TestStartSSEStreamBranches(t *testing.T) {
+	tx := newHTTPTransportForTest()
+	tx.registerSession("session-1")
+
+	nonFlusher := &nonFlusherResponseWriter{}
+	req := httptest.NewRequest(http.MethodGet, "/mcp", nil)
+	if session := tx.startSSEStream(nonFlusher, req, "session-1"); session != nil {
+		t.Fatal("expected nil session when writer is not a flusher")
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/mcp", nil)
+	req.Header.Set("Last-Event-ID", "bad-value")
+	rr := httptest.NewRecorder()
+	if session := tx.startSSEStream(rr, req, "session-1"); session != nil {
+		t.Fatal("expected nil session for invalid last-event-id")
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/mcp", nil)
+	rr = httptest.NewRecorder()
+	if session := tx.startSSEStream(rr, req, "unknown"); session != nil {
+		t.Fatal("expected nil session for unknown session")
+	}
+}
+
+func TestHandleGetGuardsAndCleanup(t *testing.T) {
+	tx := newHTTPTransportForTest()
+	ctx := context.Background()
+
+	req := httptest.NewRequest(http.MethodGet, "/mcp", nil)
+	rr := httptest.NewRecorder()
+	tx.handleGet(ctx, &httpMockServer{}, rr, req)
+	if rr.Code != http.StatusNotAcceptable {
+		t.Fatalf("expected 406, got %d", rr.Code)
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/mcp", nil)
+	req.Header.Set("Accept", "text/event-stream")
+	rr = httptest.NewRecorder()
+	tx.handleGet(ctx, &httpMockServer{}, rr, req)
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 for missing session header, got %d", rr.Code)
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/mcp", nil)
+	req.Header.Set("Accept", "text/event-stream")
+	req.Header.Set(mcp.SessionIDHeader, "session-1")
+	rr = httptest.NewRecorder()
+	tx.handleGet(ctx, &httpMockServer{}, rr, req)
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 for missing protocol header, got %d", rr.Code)
+	}
+
+	tx.registerSession("session-1")
+	req = httptest.NewRequest(http.MethodGet, "/mcp", nil)
+	req.Header.Set("Accept", "text/event-stream")
+	req.Header.Set(mcp.SessionIDHeader, "session-1")
+	req.Header.Set(mcp.ProtocolVersionHeader, mcp.ProtocolVersion)
+	rr = httptest.NewRecorder()
+	cancelledCtx, cancel := context.WithCancel(context.Background())
+	cancel()
+	tx.handleGet(cancelledCtx, &httpMockServer{}, rr, req)
+
+	tx.mu.RLock()
+	_, exists := tx.sessions["session-1"]
+	tx.mu.RUnlock()
+	if exists {
+		t.Fatal("expected session to be cleaned up after context cancellation")
+	}
+}
+
+func TestHandleDeleteGuards(t *testing.T) {
+	tx := newHTTPTransportForTest()
+
+	req := httptest.NewRequest(http.MethodDelete, "/mcp", nil)
+	rr := httptest.NewRecorder()
+	tx.handleDelete(rr, req)
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 for missing session header, got %d", rr.Code)
+	}
+
+	req = httptest.NewRequest(http.MethodDelete, "/mcp", nil)
+	req.Header.Set(mcp.SessionIDHeader, "unknown")
+	req.Header.Set(mcp.ProtocolVersionHeader, mcp.ProtocolVersion)
+	rr = httptest.NewRecorder()
+	tx.handleDelete(rr, req)
+	if rr.Code != http.StatusNotFound {
+		t.Fatalf("expected 404 for unknown session, got %d", rr.Code)
+	}
+}
+
+func TestHandleJSONRequestBranches(t *testing.T) {
+	tx := newHTTPTransportForTest()
+	req := mcp.Request{JSONRPC: mcp.JSONRPCVersion, Method: "tools/list", ID: 1}
+
+	rr := httptest.NewRecorder()
+	tx.handleJSONRequest(context.Background(), &httpMockServerError{}, rr, req, "")
+	if rr.Code != http.StatusInternalServerError {
+		t.Fatalf("expected 500 on server error, got %d", rr.Code)
+	}
+
+	rr = httptest.NewRecorder()
+	tx.handleJSONRequest(context.Background(), &httpMockServerNoResponse{}, rr, req, "")
+	if rr.Code != http.StatusInternalServerError {
+		t.Fatalf("expected 500 when no response is generated, got %d", rr.Code)
+	}
+}
+
+func TestStopAndMiddleware(t *testing.T) {
+	tx := newHTTPTransportForTest()
+	if err := tx.Stop(); err != nil {
+		t.Fatalf("expected stop without server to succeed, got %v", err)
+	}
+
+	h := tx.corsMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	req := httptest.NewRequest(http.MethodOptions, "/mcp", nil)
+	req.Header.Set("Origin", "http://localhost:1234")
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, req)
+	if rr.Header().Get("Access-Control-Allow-Origin") == "" {
+		t.Fatal("expected CORS header to be set for allowed origin")
+	}
+
+	secured := tx.securityMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	req = httptest.NewRequest(http.MethodGet, "/mcp", nil)
+	req.Header.Set("Origin", "http://evil.com")
+	rr = httptest.NewRecorder()
+	secured.ServeHTTP(rr, req)
+	if rr.Code != http.StatusForbidden {
+		t.Fatalf("expected 403 for disallowed origin, got %d", rr.Code)
 	}
 }
