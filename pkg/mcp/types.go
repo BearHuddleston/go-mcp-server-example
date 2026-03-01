@@ -7,8 +7,14 @@ import (
 
 // Constants for MCP protocol
 const (
-	ProtocolVersion = "2025-03-26"
+	ProtocolVersion = "2025-11-25"
 	JSONRPCVersion  = "2.0"
+)
+
+const (
+	SessionIDHeader       = "MCP-Session-Id"
+	ProtocolVersionHeader = "MCP-Protocol-Version"
+	LegacyProtocolVersion = "2025-03-26"
 )
 
 // JSON-RPC 2.0 error codes

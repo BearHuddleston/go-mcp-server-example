@@ -4,8 +4,9 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
-	"log"
+	"log/slog"
 	"os"
 
 	"github.com/BearHuddleston/mcp-server-example/pkg/config"
@@ -27,7 +28,7 @@ func NewStdio(cfg *config.Config) *Stdio {
 
 // Start begins listening on stdin for JSON-RPC messages
 func (t *Stdio) Start(ctx context.Context, server mcp.Server) error {
-	log.Println("Starting stdio transport...")
+	slog.Info("starting stdio transport")
 
 	scanner := bufio.NewScanner(os.Stdin)
 
@@ -61,16 +62,16 @@ func (t *Stdio) Start(ctx context.Context, server mcp.Server) error {
 	for {
 		select {
 		case <-ctx.Done():
-			log.Println("Stdio transport shutting down")
+			slog.Info("stdio transport shutting down")
 			return nil
 		case err := <-errChan:
 			if err != nil {
-				log.Printf("Error reading input: %v", err)
+				slog.Error("error reading input", "error", err)
 			}
 			return err
 		case line, ok := <-lineChan:
 			if !ok {
-				log.Println("Input closed, exiting")
+				slog.Info("input closed; exiting")
 				return nil
 			}
 
@@ -79,7 +80,7 @@ func (t *Stdio) Start(ctx context.Context, server mcp.Server) error {
 			}
 
 			if err := t.handleMessage(ctx, server, line); err != nil {
-				log.Printf("Error handling message: %v", err)
+				slog.Error("error handling message", "error", err)
 			}
 		}
 	}
@@ -98,13 +99,13 @@ func (t *Stdio) handleMessage(ctx context.Context, server mcp.Server, line strin
 
 	// Validate JSON-RPC
 	if req.JSONRPC != mcp.JSONRPCVersion {
-		log.Printf("Invalid JSON-RPC version: %s", req.JSONRPC)
+		slog.Warn("invalid JSON-RPC version", "version", req.JSONRPC)
 		return nil
 	}
 
 	// Handle notifications (no response expected)
 	if req.ID == nil {
-		log.Printf("Received notification: %s", req.Method)
+		slog.Info("received notification", "method", req.Method)
 		return nil
 	}
 
@@ -138,7 +139,7 @@ func (t *Stdio) sendParseError(line string, err error) error {
 
 	respBytes, marshErr := json.Marshal(errorResp)
 	if marshErr != nil {
-		return marshErr
+		return errors.Join(err, marshErr)
 	}
 
 	fmt.Println(string(respBytes))

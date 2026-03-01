@@ -3,9 +3,12 @@ package transport
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
-	"log"
+	"log/slog"
 	"net/http"
 	"regexp"
 	"strconv"
@@ -22,6 +25,7 @@ type HTTPTransport struct {
 	port          int
 	server        *http.Server
 	sessions      map[string]*SSESession
+	knownSessions map[string]struct{}
 	mu            sync.RWMutex
 	config        *config.Config
 	originRegexes []*regexp.Regexp
@@ -29,9 +33,10 @@ type HTTPTransport struct {
 
 // HTTPResponseSender implements ResponseSender for HTTP responses
 type HTTPResponseSender struct {
-	writer http.ResponseWriter
-	sent   bool
-	mu     sync.Mutex
+	writer    http.ResponseWriter
+	sent      bool
+	mu        sync.Mutex
+	sessionID string
 }
 
 func (h *HTTPResponseSender) SendResponse(response mcp.Response) error {
@@ -39,9 +44,12 @@ func (h *HTTPResponseSender) SendResponse(response mcp.Response) error {
 	defer h.mu.Unlock()
 
 	if h.sent {
-		return fmt.Errorf("response already sent")
+		return errors.New("response already sent")
 	}
 
+	if h.sessionID != "" {
+		h.writer.Header().Set(mcp.SessionIDHeader, h.sessionID)
+	}
 	h.writer.Header().Set("Content-Type", "application/json; charset=utf-8")
 	h.writer.WriteHeader(http.StatusOK)
 	err := json.NewEncoder(h.writer).Encode(response)
@@ -89,9 +97,10 @@ type SSESession struct {
 // NewHTTP creates a new HTTP transport
 func NewHTTP(cfg *config.Config) *HTTPTransport {
 	t := &HTTPTransport{
-		port:     cfg.HTTPPort,
-		sessions: make(map[string]*SSESession),
-		config:   cfg,
+		port:          cfg.HTTPPort,
+		sessions:      make(map[string]*SSESession),
+		knownSessions: make(map[string]struct{}),
+		config:        cfg,
 	}
 
 	// Pre-compile regex patterns for origin validation
@@ -105,7 +114,7 @@ func NewHTTP(cfg *config.Config) *HTTPTransport {
 		pattern := "^" + strings.ReplaceAll(allowed, "*", ".*") + "$"
 		re, err := regexp.Compile(pattern)
 		if err != nil {
-			log.Printf("Warning: Invalid origin pattern '%s': %v (skipping)", allowed, err)
+			slog.Warn("invalid origin pattern; skipping", "pattern", allowed, "error", err)
 			continue
 		}
 		t.originRegexes = append(t.originRegexes, re)
@@ -120,19 +129,17 @@ func (t *HTTPTransport) Start(ctx context.Context, server mcp.Server) error {
 	// Add CORS and security middleware
 	handler := t.corsMiddleware(t.securityMiddleware(mux))
 
-	// MCP endpoint for POST and GET requests
-	mux.HandleFunc("/mcp", func(w http.ResponseWriter, r *http.Request) {
-		switch r.Method {
-		case http.MethodPost:
-			t.handlePost(ctx, server, w, r)
-		case http.MethodGet:
-			t.handleGet(ctx, server, w, r)
-		case http.MethodOptions:
-			// CORS preflight handled by middleware
-			w.WriteHeader(http.StatusOK)
-		default:
-			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-		}
+	mux.HandleFunc("POST /mcp", func(w http.ResponseWriter, r *http.Request) {
+		t.handlePost(ctx, server, w, r)
+	})
+	mux.HandleFunc("GET /mcp", func(w http.ResponseWriter, r *http.Request) {
+		t.handleGet(ctx, server, w, r)
+	})
+	mux.HandleFunc("DELETE /mcp", func(w http.ResponseWriter, r *http.Request) {
+		t.handleDelete(w, r)
+	})
+	mux.HandleFunc("OPTIONS /mcp", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
 	})
 
 	// Health check endpoint
@@ -150,19 +157,19 @@ func (t *HTTPTransport) Start(ctx context.Context, server mcp.Server) error {
 		IdleTimeout:  t.config.IdleTimeout,
 	}
 
-	log.Printf("Starting HTTP transport on port %d...", t.port)
-	log.Printf("MCP endpoint: http://localhost:%d/mcp", t.port)
+	slog.Info("starting HTTP transport", "port", t.port)
+	slog.Info("MCP endpoint", "url", fmt.Sprintf("http://localhost:%d/mcp", t.port))
 
 	// Start server in goroutine
 	go func() {
 		if err := t.server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			log.Printf("HTTP server error: %v", err)
+			slog.Error("HTTP server error", "error", err)
 		}
 	}()
 
 	// Wait for context cancellation
 	<-ctx.Done()
-	log.Println("HTTP transport shutting down")
+	slog.Info("HTTP transport shutting down")
 	return t.Stop()
 }
 
@@ -173,6 +180,7 @@ func (t *HTTPTransport) Stop() error {
 		session.close()
 	}
 	t.sessions = make(map[string]*SSESession)
+	t.knownSessions = make(map[string]struct{})
 	t.mu.Unlock()
 
 	if t.server != nil {
@@ -184,127 +192,252 @@ func (t *HTTPTransport) Stop() error {
 }
 
 func (t *HTTPTransport) handlePost(ctx context.Context, server mcp.Server, w http.ResponseWriter, r *http.Request) {
-	// Ensure UTF-8 encoding for request body
-	r.Header.Set("Content-Type", "application/json; charset=utf-8")
-
-	// Read request body
-	var req mcp.Request
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		t.sendError(w, -1, mcp.ErrorCodeParseError, "Parse error", err.Error())
+	var raw json.RawMessage
+	if err := json.NewDecoder(r.Body).Decode(&raw); err != nil {
+		t.sendErrorWithStatus(w, -1, mcp.ErrorCodeParseError, "Parse error", err.Error(), http.StatusBadRequest)
 		return
 	}
 
-	// Check Accept header to determine response type
+	trimmed := strings.TrimSpace(string(raw))
+	if trimmed == "" {
+		t.sendErrorWithStatus(w, -1, mcp.ErrorCodeInvalidRequest, "Request body cannot be empty", nil, http.StatusBadRequest)
+		return
+	}
+	if strings.HasPrefix(trimmed, "[") {
+		t.sendErrorWithStatus(w, -1, mcp.ErrorCodeInvalidRequest, "Batch requests are not supported", nil, http.StatusBadRequest)
+		return
+	}
+
+	var req mcp.Request
+	if err := json.Unmarshal(raw, &req); err != nil {
+		t.sendErrorWithStatus(w, -1, mcp.ErrorCodeParseError, "Parse error", err.Error(), http.StatusBadRequest)
+		return
+	}
+
 	acceptHeader := r.Header.Get("Accept")
 	wantsSSE := strings.Contains(acceptHeader, "text/event-stream")
 	wantsJSON := strings.Contains(acceptHeader, "application/json")
-
-	// MCP specification requires clients to accept both types
 	if !wantsJSON && !wantsSSE {
-		t.sendError(w, req.ID, mcp.ErrorCodeInvalidRequest, "Accept header must include application/json and/or text/event-stream", nil)
+		t.sendErrorWithStatus(w, req.ID, mcp.ErrorCodeInvalidRequest, "Accept header must include application/json and/or text/event-stream", nil, http.StatusBadRequest)
 		return
 	}
 
-	// Validate request
 	if req.JSONRPC != mcp.JSONRPCVersion {
-		t.sendError(w, req.ID, mcp.ErrorCodeInvalidRequest, "Invalid JSON-RPC version", nil)
+		t.sendErrorWithStatus(w, req.ID, mcp.ErrorCodeInvalidRequest, "Invalid JSON-RPC version", nil, http.StatusBadRequest)
 		return
 	}
 
-	// Handle notifications (no response expected)
+	if req.Method == "" {
+		w.WriteHeader(http.StatusAccepted)
+		return
+	}
+
+	sessionID, err := t.resolveSessionForRequest(r, req)
+	if err != nil {
+		status := http.StatusBadRequest
+		if errors.Is(err, errUnknownSession) {
+			status = http.StatusNotFound
+		}
+		t.sendErrorWithStatus(w, req.ID, mcp.ErrorCodeInvalidRequest, err.Error(), nil, status)
+		return
+	}
+
 	if req.ID == nil {
-		log.Printf("Received notification: %s", req.Method)
-		w.WriteHeader(http.StatusNoContent)
+		slog.Info("received notification", "method", req.Method)
+		w.WriteHeader(http.StatusAccepted)
 		return
 	}
 
-	// If client wants SSE and this is a request, start SSE stream
-	if wantsSSE && req.ID != nil {
-		t.handleSSERequest(ctx, server, w, r, req)
+	if wantsSSE {
+		t.handleSSERequest(ctx, server, w, r, req, sessionID)
 		return
 	}
 
-	// Handle regular JSON response
-	t.handleJSONRequest(ctx, server, w, req)
+	t.handleJSONRequest(ctx, server, w, req, sessionID)
 }
 
 func (t *HTTPTransport) handleGet(ctx context.Context, server mcp.Server, w http.ResponseWriter, r *http.Request) {
-	_ = server // Server not used for GET but kept for consistency
-	// GET is used to open SSE streams or resume connections
-	session := t.startSSEStream(w, r)
+	_ = server
+	if !strings.Contains(r.Header.Get("Accept"), "text/event-stream") {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	sessionID := r.Header.Get(mcp.SessionIDHeader)
+	if sessionID == "" {
+		http.Error(w, "Missing MCP session header", http.StatusBadRequest)
+		return
+	}
+
+	if err := t.ensureProtocolVersion(r.Header.Get(mcp.ProtocolVersionHeader)); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	if !t.sessionExists(sessionID) {
+		http.Error(w, "Unknown session", http.StatusNotFound)
+		return
+	}
+
+	session := t.startSSEStream(w, r, sessionID)
 	if session == nil {
 		return
 	}
 
-	// Keep the connection alive until context is cancelled
 	<-ctx.Done()
 
-	// Clean up session
 	t.mu.Lock()
 	delete(t.sessions, session.ID)
 	t.mu.Unlock()
 }
 
-func (t *HTTPTransport) handleJSONRequest(ctx context.Context, server mcp.Server, w http.ResponseWriter, req mcp.Request) {
-	// Create request context with timeout and HTTP response sender
+func (t *HTTPTransport) handleDelete(w http.ResponseWriter, r *http.Request) {
+	sessionID := r.Header.Get(mcp.SessionIDHeader)
+	if sessionID == "" {
+		http.Error(w, "Missing MCP session header", http.StatusBadRequest)
+		return
+	}
+
+	if err := t.ensureProtocolVersion(r.Header.Get(mcp.ProtocolVersionHeader)); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	t.mu.Lock()
+	_, known := t.knownSessions[sessionID]
+	delete(t.knownSessions, sessionID)
+	if session, ok := t.sessions[sessionID]; ok {
+		session.close()
+		delete(t.sessions, sessionID)
+	}
+	t.mu.Unlock()
+
+	if !known {
+		http.Error(w, "Unknown session", http.StatusNotFound)
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
+var errUnknownSession = errors.New("unknown session")
+
+func (t *HTTPTransport) resolveSessionForRequest(r *http.Request, req mcp.Request) (string, error) {
+	isInitialize := req.Method == "initialize"
+
+	if !isInitialize {
+		if err := t.ensureProtocolVersion(r.Header.Get(mcp.ProtocolVersionHeader)); err != nil {
+			return "", err
+		}
+	}
+
+	sessionID := r.Header.Get(mcp.SessionIDHeader)
+	if isInitialize {
+		if sessionID != "" {
+			if !t.sessionExists(sessionID) {
+				return "", errUnknownSession
+			}
+			return sessionID, nil
+		}
+		created, err := generateSessionID()
+		if err != nil {
+			return "", fmt.Errorf("failed to generate session id: %w", err)
+		}
+		t.registerSession(created)
+		return created, nil
+	}
+
+	if sessionID == "" {
+		return "", errors.New("missing MCP session header")
+	}
+	if !t.sessionExists(sessionID) {
+		return "", errUnknownSession
+	}
+	return sessionID, nil
+}
+
+func (t *HTTPTransport) ensureProtocolVersion(version string) error {
+	if version == "" || version == mcp.LegacyProtocolVersion || version == mcp.ProtocolVersion {
+		return nil
+	}
+	return fmt.Errorf("unsupported MCP protocol version: %s", version)
+}
+
+func (t *HTTPTransport) registerSession(sessionID string) {
+	t.mu.Lock()
+	t.knownSessions[sessionID] = struct{}{}
+	t.mu.Unlock()
+}
+
+func (t *HTTPTransport) sessionExists(sessionID string) bool {
+	t.mu.RLock()
+	_, ok := t.knownSessions[sessionID]
+	t.mu.RUnlock()
+	return ok
+}
+
+func generateSessionID() (string, error) {
+	b := make([]byte, 16)
+	if _, err := rand.Read(b); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(b), nil
+}
+
+func (t *HTTPTransport) handleJSONRequest(ctx context.Context, server mcp.Server, w http.ResponseWriter, req mcp.Request, sessionID string) {
 	reqCtx, cancel := context.WithTimeout(ctx, t.config.RequestTimeout)
 	defer cancel()
 
-	// Inject HTTP response sender into context
-	httpSender := &HTTPResponseSender{writer: w}
+	httpSender := &HTTPResponseSender{writer: w, sessionID: sessionID}
 	reqCtx = context.WithValue(reqCtx, mcp.ResponseSenderKey, httpSender)
+	if sessionID != "" {
+		reqCtx = context.WithValue(reqCtx, mcp.SessionIDKey, sessionID)
+	}
 
-	// Process request
 	if err := server.HandleRequest(reqCtx, req); err != nil {
-		log.Printf("Error handling request: %v", err)
+		slog.Error("error handling request", "error", err)
 		if !httpSender.sent {
-			t.sendError(w, req.ID, mcp.ErrorCodeInternalError, "Internal error", err.Error())
+			t.sendErrorWithStatus(w, req.ID, mcp.ErrorCodeInternalError, "Internal error", err.Error(), http.StatusInternalServerError)
 		}
 		return
 	}
 
-	// If no response was sent (shouldn't happen with proper request handling),
-	// send a default error
 	if !httpSender.sent {
-		t.sendError(w, req.ID, mcp.ErrorCodeInternalError, "No response generated", nil)
+		t.sendErrorWithStatus(w, req.ID, mcp.ErrorCodeInternalError, "No response generated", nil, http.StatusInternalServerError)
 	}
 }
 
-func (t *HTTPTransport) handleSSERequest(ctx context.Context, server mcp.Server, w http.ResponseWriter, r *http.Request, req mcp.Request) {
-	session := t.startSSEStream(w, r)
+func (t *HTTPTransport) handleSSERequest(ctx context.Context, server mcp.Server, w http.ResponseWriter, r *http.Request, req mcp.Request, sessionID string) {
+	session := t.startSSEStream(w, r, sessionID)
 	if session == nil {
 		return
 	}
 
-	// Process the request with SSE response sender
 	reqCtx, cancel := context.WithTimeout(ctx, t.config.RequestTimeout)
 	defer cancel()
 
-	// Inject SSE response sender and session ID into context
 	sseSender := &SSEResponseSender{session: session}
 	reqCtx = context.WithValue(reqCtx, mcp.ResponseSenderKey, sseSender)
 	reqCtx = context.WithValue(reqCtx, mcp.SessionIDKey, session.ID)
 
 	if err := server.HandleRequest(reqCtx, req); err != nil {
-		log.Printf("Error handling SSE request: %v", err)
+		slog.Error("error handling SSE request", "error", err)
 		session.sendError(req.ID, mcp.ErrorCodeInternalError, "Internal error", err.Error())
 	}
 }
 
-func (t *HTTPTransport) startSSEStream(w http.ResponseWriter, r *http.Request) *SSESession {
-	// Check if client supports SSE
+func (t *HTTPTransport) startSSEStream(w http.ResponseWriter, r *http.Request, sessionID string) *SSESession {
 	flusher, ok := w.(http.Flusher)
 	if !ok {
 		http.Error(w, "Streaming unsupported", http.StatusInternalServerError)
 		return nil
 	}
 
-	// Set SSE headers with UTF-8 encoding
 	w.Header().Set("Content-Type", "text/event-stream; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
+	w.Header().Set(mcp.SessionIDHeader, sessionID)
 
-	// Check for Last-Event-ID for connection resumption
 	lastEventID := r.Header.Get("Last-Event-ID")
 	eventID := 0
 	if lastEventID != "" {
@@ -313,12 +446,6 @@ func (t *HTTPTransport) startSSEStream(w http.ResponseWriter, r *http.Request) *
 		}
 	}
 
-	// Check for existing session ID from Mcp-Session-Id header
-	sessionID := r.Header.Get("Mcp-Session-Id")
-	if sessionID == "" {
-		// Create new session
-		sessionID = fmt.Sprintf("session_%d", time.Now().UnixNano())
-	}
 	session := &SSESession{
 		ID:      sessionID,
 		writer:  w,
@@ -326,15 +453,10 @@ func (t *HTTPTransport) startSSEStream(w http.ResponseWriter, r *http.Request) *
 		eventID: eventID,
 	}
 
-	// Store session
 	t.mu.Lock()
 	t.sessions[sessionID] = session
 	t.mu.Unlock()
 
-	// Set session ID header for client
-	w.Header().Set("Mcp-Session-Id", sessionID)
-
-	// Send initial connection event
 	session.sendEvent("connected", map[string]string{
 		"sessionId": sessionID,
 		"timestamp": time.Now().UTC().Format(time.RFC3339),
@@ -344,6 +466,10 @@ func (t *HTTPTransport) startSSEStream(w http.ResponseWriter, r *http.Request) *
 }
 
 func (t *HTTPTransport) sendError(w http.ResponseWriter, id any, code int, message string, data any) {
+	t.sendErrorWithStatus(w, id, code, message, data, http.StatusBadRequest)
+}
+
+func (t *HTTPTransport) sendErrorWithStatus(w http.ResponseWriter, id any, code int, message string, data any, status int) {
 	errorResp := mcp.Response{
 		JSONRPC: mcp.JSONRPCVersion,
 		ID:      id,
@@ -355,7 +481,7 @@ func (t *HTTPTransport) sendError(w http.ResponseWriter, id any, code int, messa
 	}
 
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
-	w.WriteHeader(http.StatusBadRequest)
+	w.WriteHeader(status)
 	json.NewEncoder(w).Encode(errorResp)
 }
 
@@ -364,7 +490,7 @@ func (s *SSESession) sendEvent(eventType string, data any) error {
 	defer s.mu.Unlock()
 
 	if s.closed {
-		return fmt.Errorf("session closed")
+		return errors.New("session closed")
 	}
 
 	dataBytes, err := json.Marshal(data)
@@ -425,8 +551,8 @@ func (t *HTTPTransport) corsMiddleware(next http.Handler) http.Handler {
 			// This avoids browser warnings about wildcard with credentials
 		}
 
-		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Accept, Last-Event-ID, Mcp-Session-Id")
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Accept, Last-Event-ID, MCP-Session-Id, MCP-Protocol-Version")
 		w.Header().Set("Access-Control-Max-Age", "86400")
 
 		next.ServeHTTP(w, r)
@@ -468,7 +594,7 @@ func (t *HTTPTransport) securityMiddleware(next http.Handler) http.Handler {
 		origin := r.Header.Get("Origin")
 		if origin != "" {
 			if !t.isOriginAllowed(origin) {
-				log.Printf("Rejected request from disallowed origin: %s", origin)
+				slog.Warn("rejected request from disallowed origin", "origin", origin)
 				http.Error(w, "Origin not allowed", http.StatusForbidden)
 				return
 			}

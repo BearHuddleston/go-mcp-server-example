@@ -18,7 +18,7 @@ package main
 import (
 	"context"
 	"fmt"
-	"log"
+	"log/slog"
 	"os"
 	"os/signal"
 	"strings"
@@ -34,36 +34,33 @@ func main() {
 	// Parse configuration
 	cfg, err := config.ParseFlags()
 	if err != nil {
-		log.Fatalf("Configuration error: %v", err)
+		slog.Error("configuration error", "error", err)
+		os.Exit(1)
 	}
 
-	// Set up structured logging
-	log.SetFlags(log.LstdFlags | log.Lshortfile)
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo}))
+	slog.SetDefault(logger)
 
-	// Run the server
 	if err := run(cfg); err != nil {
-		log.Fatalf("Server error: %v", err)
+		slog.Error("server error", "error", err)
+		os.Exit(1)
 	}
 }
 
 // run starts and runs the MCP server with the given configuration
 func run(cfg *config.Config) error {
-	// Create domain handler (could be injected/configured)
 	coffeeHandler := handlers.NewCoffee()
 
-	// Create server with handlers
 	mcpServer, err := server.New(cfg, coffeeHandler, coffeeHandler, coffeeHandler)
 	if err != nil {
 		return fmt.Errorf("failed to create server: %w", err)
 	}
 
-	// Create transport
 	transport, err := createTransport(cfg)
 	if err != nil {
 		return fmt.Errorf("failed to create transport: %w", err)
 	}
 
-	// Set up graceful shutdown
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -71,11 +68,10 @@ func run(cfg *config.Config) error {
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
 	go func() {
 		<-sigChan
-		log.Println("Received shutdown signal, stopping server...")
+		slog.Info("received shutdown signal; stopping server")
 		cancel()
 	}()
 
-	// Start the transport
 	if err := transport.Start(ctx, mcpServer); err != nil {
 		return fmt.Errorf("transport start failed: %w", err)
 	}

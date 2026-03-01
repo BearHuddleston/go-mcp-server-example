@@ -4,8 +4,8 @@ A [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) server implem
 
 ## Features
 
-- **MCP 2025-03-26 Specification Compliant**
-- **Multiple Transport Support**: `stdio` (default, compatible with MCP Inspector), `http` (with SSE)
+- **MCP 2025-11-25 Specification Compliant**
+- **Multiple Transport Support**: `stdio` (default, compatible with MCP Inspector), `http` (Streamable HTTP + SSE)
 - **Coffee Shop Domain**: Tools, resources, and prompts for coffee shop operations
 - **Graceful Shutdown & Configurable Timeouts**
 - **Production Ready**: Structured logging, error handling, validation
@@ -38,7 +38,7 @@ go build -o mcpserver ./cmd/mcpserver
 ```
 
   - `stdio`: Standard input/output (default, compatible with MCP Inspector)
-  - `http`: HTTP with Server-Sent Events (SSE) support
+  - `http`: Streamable HTTP transport (JSON + SSE)
 - **Coffee Shop Domain**: Tools, resources, and prompts for coffee shop operations
 - **Graceful Shutdown**: Proper signal handling and resource cleanup
 - **Configurable Timeouts**: Request, shutdown, and HTTP timeouts
@@ -133,8 +133,9 @@ go run ./... --transport http --port 8080
 ```
 
 **Endpoints:**
-- `POST /mcp` - Send JSON-RPC requests
-- `GET /mcp` - Open SSE stream
+- `POST /mcp` - Send single JSON-RPC message (request/notification/response)
+- `GET /mcp` - Open SSE stream for server-initiated messages
+- `DELETE /mcp` - Terminate an MCP session
 - `GET /health` - Health check
 
 **Examples:**
@@ -435,7 +436,7 @@ go run ./... --request-timeout 60s
 
 ## Resources
 
-- [Model Context Protocol Specification](https://modelcontextprotocol.io/specification/2025-03-26)
+- [Model Context Protocol Specification](https://modelcontextprotocol.io/specification/2025-11-25)
 - [MCP Inspector](https://github.com/modelcontextprotocol/inspector)
 - [Go Documentation](https://golang.org/doc/)
 - [Jack Herrington's YouTube video on DIY MCP Server](https://www.youtube.com/watch?v=nTMSyldeVSw)
