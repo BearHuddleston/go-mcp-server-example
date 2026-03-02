@@ -1,0 +1,99 @@
+{
+  "schemaVersion": "v1",
+  "server": {
+    "name": "Playbook Recommender MCP",
+    "version": "1.0.0"
+  },
+  "runtime": {
+    "transportType": "stdio",
+    "requestTimeout": "45s"
+  },
+  "items": [
+    {
+      "name": "Cost Optimization Playbook",
+      "price": 3,
+      "category": "finops",
+      "description": "Step-by-step approach for cloud spend reduction and rightsizing."
+    },
+    {
+      "name": "Reliability Upgrade Playbook",
+      "price": 5,
+      "category": "reliability",
+      "description": "Roadmap for improving SLOs, incident response, and resilience."
+    },
+    {
+      "name": "Delivery Acceleration Playbook",
+      "price": 4,
+      "category": "delivery",
+      "description": "Plan to reduce cycle time with CI improvements and guardrails."
+    }
+  ],
+  "tools": [
+    {
+      "mode": "list_items",
+      "name": "listPlaybooks",
+      "description": "List available playbooks",
+      "inputSchema": {
+        "type": "object",
+        "properties": {},
+        "required": []
+      }
+    },
+    {
+      "mode": "get_item_details",
+      "name": "getPlaybookDetails",
+      "description": "Get details for a specific playbook",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "playbook_name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "playbook_name"
+        ]
+      }
+    }
+  ],
+  "resources": [
+    {
+      "mode": "catalog_items",
+      "uri": "catalog://playbooks",
+      "name": "playbook-catalog"
+    }
+  ],
+  "prompts": [
+    {
+      "mode": "plan_recommendation",
+      "name": "recommendPlaybook",
+      "description": "Recommend a playbook based on constraints",
+      "arguments": [
+        {
+          "name": "budget",
+          "description": "Budget in points",
+          "required": false
+        },
+        {
+          "name": "goal",
+          "description": "Target outcome",
+          "required": false
+        }
+      ],
+      "template": "Recommend the most effective playbook%s%s and include a 30-60-90 day plan."
+    },
+    {
+      "mode": "item_brief",
+      "name": "playbookBrief",
+      "description": "Generate a concise playbook brief",
+      "arguments": [
+        {
+          "name": "playbook_name",
+          "description": "Playbook to summarize",
+          "required": true
+        }
+      ],
+      "template": "Provide a concise brief for %s with expected outcomes and tradeoffs."
+    }
+  ]
+}

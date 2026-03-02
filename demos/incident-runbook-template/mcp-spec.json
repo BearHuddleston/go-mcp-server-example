@@ -1,0 +1,104 @@
+{
+  "schemaVersion": "v1",
+  "server": {
+    "name": "Incident Runbook MCP",
+    "version": "1.0.0"
+  },
+  "runtime": {
+    "transportType": "http",
+    "httpPort": 8080,
+    "requestTimeout": "60s",
+    "allowedOrigins": [
+      "http://localhost:*",
+      "http://127.0.0.1:*"
+    ]
+  },
+  "items": [
+    {
+      "name": "API Latency Spike",
+      "price": 4,
+      "category": "incident",
+      "description": "Runbook for diagnosing latency regressions across service dependencies."
+    },
+    {
+      "name": "Database Connection Saturation",
+      "price": 5,
+      "category": "incident",
+      "description": "Runbook for pool exhaustion, lock contention, and failover choices."
+    },
+    {
+      "name": "Queue Backlog Growth",
+      "price": 3,
+      "category": "incident",
+      "description": "Runbook for consumer lag, dead-letter spikes, and throughput recovery."
+    }
+  ],
+  "tools": [
+    {
+      "mode": "list_items",
+      "name": "listRunbooks",
+      "description": "List available incident runbooks",
+      "inputSchema": {
+        "type": "object",
+        "properties": {},
+        "required": []
+      }
+    },
+    {
+      "mode": "get_item_details",
+      "name": "getRunbook",
+      "description": "Get runbook details by incident name",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "incident_name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "incident_name"
+        ]
+      }
+    }
+  ],
+  "resources": [
+    {
+      "mode": "catalog_items",
+      "uri": "catalog://runbooks",
+      "name": "incident-runbooks"
+    }
+  ],
+  "prompts": [
+    {
+      "mode": "plan_recommendation",
+      "name": "recommendIncidentPlan",
+      "description": "Recommend a response plan for incident pressure",
+      "arguments": [
+        {
+          "name": "budget",
+          "description": "Response effort budget",
+          "required": false
+        },
+        {
+          "name": "goal",
+          "description": "Primary incident objective",
+          "required": false
+        }
+      ],
+      "template": "Recommend an incident response plan%s%s with immediate, short-term, and long-term actions."
+    },
+    {
+      "mode": "item_brief",
+      "name": "runbookBrief",
+      "description": "Create a concise runbook brief",
+      "arguments": [
+        {
+          "name": "incident_name",
+          "description": "Runbook to summarize",
+          "required": true
+        }
+      ],
+      "template": "Write a concise incident brief for %s with triage steps and escalation criteria."
+    }
+  ]
+}

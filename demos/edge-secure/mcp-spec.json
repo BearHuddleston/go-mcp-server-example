@@ -1,0 +1,104 @@
+{
+  "schemaVersion": "v1",
+  "server": {
+    "name": "Edge Secure MCP",
+    "version": "1.0.0"
+  },
+  "runtime": {
+    "transportType": "http",
+    "httpPort": 8080,
+    "requestTimeout": "20s",
+    "allowedOrigins": [
+      "https://ops.example.com",
+      "https://assistant.example.com"
+    ]
+  },
+  "items": [
+    {
+      "name": "Secrets Rotation Checklist",
+      "price": 2,
+      "category": "security",
+      "description": "Checklist for rotating credentials and validating downstream integrations."
+    },
+    {
+      "name": "Service Hardening Baseline",
+      "price": 3,
+      "category": "security",
+      "description": "Baseline controls for auth, encryption, and runtime permissions."
+    },
+    {
+      "name": "Deployment Gate Policy",
+      "price": 2,
+      "category": "compliance",
+      "description": "Policy checks required before releasing to production environments."
+    }
+  ],
+  "tools": [
+    {
+      "mode": "list_items",
+      "name": "listSecurityProfiles",
+      "description": "List security profiles and checklists",
+      "inputSchema": {
+        "type": "object",
+        "properties": {},
+        "required": []
+      }
+    },
+    {
+      "mode": "get_item_details",
+      "name": "getSecurityProfile",
+      "description": "Get security profile details",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "profile_name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "profile_name"
+        ]
+      }
+    }
+  ],
+  "resources": [
+    {
+      "mode": "catalog_items",
+      "uri": "catalog://security",
+      "name": "security-catalog"
+    }
+  ],
+  "prompts": [
+    {
+      "mode": "plan_recommendation",
+      "name": "recommendSecurityPlan",
+      "description": "Recommend a secure rollout plan",
+      "arguments": [
+        {
+          "name": "budget",
+          "description": "Security implementation budget",
+          "required": false
+        },
+        {
+          "name": "goal",
+          "description": "Primary security objective",
+          "required": false
+        }
+      ],
+      "template": "Recommend a secure rollout plan%s%s with controls, verification gates, and rollback strategy."
+    },
+    {
+      "mode": "item_brief",
+      "name": "securityBrief",
+      "description": "Generate a security profile brief",
+      "arguments": [
+        {
+          "name": "profile_name",
+          "description": "Profile to summarize",
+          "required": true
+        }
+      ],
+      "template": "Summarize %s including required controls, risks, and audit evidence."
+    }
+  ]
+}

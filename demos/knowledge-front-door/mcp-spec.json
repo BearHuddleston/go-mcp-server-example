@@ -1,0 +1,103 @@
+{
+  "schemaVersion": "v1",
+  "server": {
+    "name": "Knowledge Front Door MCP",
+    "version": "1.0.0"
+  },
+  "runtime": {
+    "transportType": "http",
+    "httpPort": 8080,
+    "requestTimeout": "30s",
+    "allowedOrigins": [
+      "http://localhost:*"
+    ]
+  },
+  "items": [
+    {
+      "name": "Engineering Handbook",
+      "price": 1,
+      "category": "docs",
+      "description": "Core standards for architecture, delivery, and code quality."
+    },
+    {
+      "name": "On-Call Runbooks",
+      "price": 2,
+      "category": "operations",
+      "description": "Escalation paths and incident response procedures."
+    },
+    {
+      "name": "Security Baselines",
+      "price": 2,
+      "category": "security",
+      "description": "Minimum controls for secrets, auth, and service hardening."
+    }
+  ],
+  "tools": [
+    {
+      "mode": "list_items",
+      "name": "listKnowledgeSources",
+      "description": "List curated knowledge sources",
+      "inputSchema": {
+        "type": "object",
+        "properties": {},
+        "required": []
+      }
+    },
+    {
+      "mode": "get_item_details",
+      "name": "getKnowledgeSource",
+      "description": "Get details for a knowledge source",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "source_name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "source_name"
+        ]
+      }
+    }
+  ],
+  "resources": [
+    {
+      "mode": "catalog_items",
+      "uri": "catalog://knowledge",
+      "name": "knowledge-index"
+    }
+  ],
+  "prompts": [
+    {
+      "mode": "plan_recommendation",
+      "name": "recommendKnowledgePath",
+      "description": "Recommend a reading path for a goal",
+      "arguments": [
+        {
+          "name": "budget",
+          "description": "Available time budget",
+          "required": false
+        },
+        {
+          "name": "goal",
+          "description": "Learning goal",
+          "required": false
+        }
+      ],
+      "template": "Recommend the best learning path%s%s from the knowledge catalog and explain the order."
+    },
+    {
+      "mode": "item_brief",
+      "name": "knowledgeBrief",
+      "description": "Create a brief for a knowledge source",
+      "arguments": [
+        {
+          "name": "source_name",
+          "description": "Source to summarize",
+          "required": true
+        }
+      ],
+      "template": "Summarize %s with key takeaways and who should read it first."
+    }
+  ]
+}

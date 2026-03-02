@@ -1,0 +1,104 @@
+{
+  "schemaVersion": "v1",
+  "server": {
+    "name": "Service Catalog MCP",
+    "version": "1.0.0"
+  },
+  "runtime": {
+    "transportType": "http",
+    "httpPort": 8080,
+    "requestTimeout": "30s",
+    "allowedOrigins": [
+      "http://localhost:*",
+      "http://127.0.0.1:*"
+    ]
+  },
+  "items": [
+    {
+      "name": "Identity Service",
+      "price": 2,
+      "category": "platform",
+      "description": "Authentication and authorization APIs for internal services."
+    },
+    {
+      "name": "Event Bus",
+      "price": 3,
+      "category": "messaging",
+      "description": "Managed pub/sub backbone for asynchronous service communication."
+    },
+    {
+      "name": "Observability Stack",
+      "price": 4,
+      "category": "operations",
+      "description": "Metrics, logs, and traces platform with SLO dashboards."
+    }
+  ],
+  "tools": [
+    {
+      "mode": "list_items",
+      "name": "listServices",
+      "description": "List available platform services",
+      "inputSchema": {
+        "type": "object",
+        "properties": {},
+        "required": []
+      }
+    },
+    {
+      "mode": "get_item_details",
+      "name": "getServiceDetails",
+      "description": "Get service details by name",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "service_name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "service_name"
+        ]
+      }
+    }
+  ],
+  "resources": [
+    {
+      "mode": "catalog_items",
+      "uri": "catalog://services",
+      "name": "service-catalog"
+    }
+  ],
+  "prompts": [
+    {
+      "mode": "plan_recommendation",
+      "name": "recommendServicePlan",
+      "description": "Recommend services based on budget and goal",
+      "arguments": [
+        {
+          "name": "budget",
+          "description": "Maximum service budget",
+          "required": false
+        },
+        {
+          "name": "goal",
+          "description": "Primary platform goal",
+          "required": false
+        }
+      ],
+      "template": "Recommend the best internal platform service mix for a team%s%s."
+    },
+    {
+      "mode": "item_brief",
+      "name": "serviceBrief",
+      "description": "Create a concise service brief",
+      "arguments": [
+        {
+          "name": "service_name",
+          "description": "Service to summarize",
+          "required": true
+        }
+      ],
+      "template": "Write a service brief for %s with use cases, onboarding steps, and risks."
+    }
+  ]
+}
