@@ -1,13 +1,13 @@
 # Agent Guidance
 
-This repository is a spec-driven MCP server template. Use the skills index below to apply repeatable operating procedures.
+This file defines repository-level policy for coding agents.
+It is not the MCP usage onboarding guide.
 
 ## Skills Index
 
 - `mcp-template-operator`: `skills/mcp-template-operator/SKILL.md`
-  - Run and validate the MCP server.
-  - Use capability discovery (`tools/list`, `resources/list`, `prompts/list`).
-  - Prefer hardened Docker execution for safer runtime defaults.
+  - Use this for MCP runtime onboarding and operational playbook.
+  - First-time setup wizard prompt: `skills/mcp-template-operator/FIRST_RUN_WIZARD_PROMPT.md`.
 
 ## General Rules
 

@@ -29,6 +29,10 @@ Do not use for unrelated application feature development.
 - Treat list response as lookup metadata: `{"field":"<lookupField>","values":[...]}`.
 - Include at least one concrete data point from tool/resource output in recommendations.
 
+First-time setup mode:
+- If no valid spec exists, use the wizard prompt in `FIRST_RUN_WIZARD_PROMPT.md`.
+- After initial setup, switch to direct-edit mode for change requests.
+
 Dynamic schema rule:
 - `get_item_details.inputSchema.required[0]` is the lookup field and must match item keys.
 
@@ -61,3 +65,9 @@ docker run --rm -p 8080:8080 \
 - Startup errors: classify as config/spec/port/auth/runtime.
 - Spec validation errors: report exact failing field or required mode.
 - Runtime request errors: verify `GET /health` and MCP endpoint accessibility before deeper debugging.
+
+## Related Files
+
+- Wizard template: `skills/mcp-template-operator/FIRST_RUN_WIZARD_PROMPT.md`
+- Agent policy: `AGENTS.md`
+- Human onboarding docs: `README.md`

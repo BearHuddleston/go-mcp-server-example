@@ -8,10 +8,18 @@ This repo is intentionally contract-first: transports and MCP dispatch stay stab
 
 ## Agent Notice (Read First)
 
-If you are an AI agent, read `AGENTS.md` before doing any work.
-Detailed operator instructions are in `skills/mcp-template-operator/SKILL.md`.
+If you are an AI agent:
+
+1. Read `AGENTS.md` for repository policy and constraints.
+2. Read `skills/mcp-template-operator/SKILL.md` for MCP server onboarding and operational steps.
+3. For first-time setup, use `skills/mcp-template-operator/FIRST_RUN_WIZARD_PROMPT.md`.
 
 ## Human Guide
+
+Setup modes:
+
+- **Wizard mode (first time):** agent asks a short guided question set and creates a valid `mcp-spec.json`.
+- **Direct-edit mode (ongoing):** user requests specific changes and agent updates existing spec directly.
 
 ## Common Use Cases
 
