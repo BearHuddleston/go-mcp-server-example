@@ -14,3 +14,6 @@ This repository is a spec-driven MCP server template. Use the skills index below
 - Prefer capability-driven usage over hardcoded tool/resource/prompt names.
 - In spec mode, treat `mcp-spec*.json` as the contract source of truth.
 - Surface concrete verification evidence (startup logs, health checks, MCP list calls).
+- Respect dynamic item schema contract:
+  - `get_item_details.inputSchema.required` must define exactly one lookup field.
+  - The lookup field must exist in item records and be unique/non-empty string values.

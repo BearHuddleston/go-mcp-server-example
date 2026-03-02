@@ -10,6 +10,18 @@ This directory contains ready-to-run demo specs showing common ways to use this 
 - `incident-runbook-template/mcp-spec.json`: Incident and runbook guidance template
 - `edge-secure/mcp-spec.json`: Security-focused edge/local deployment profile
 
+## Lookup Fields Per Demo
+
+Each demo uses a different dynamic lookup key for `get_item_details`:
+
+- `service-catalog`: `service_name`
+- `playbook-recommender`: `playbook_name`
+- `knowledge-front-door`: `source_name`
+- `incident-runbook-template`: `incident_name`
+- `edge-secure`: `profile_name`
+
+The key above is the required field in `tools[mode=get_item_details].inputSchema.required[0]` and must exist in every item.
+
 ## Run Any Demo
 
 ```bash
@@ -21,4 +33,12 @@ For HTTP transport:
 
 ```bash
 ./mcp-template-server -transport http -port 8080 -spec ./demos/service-catalog/mcp-spec.json
+```
+
+Run all demos quickly:
+
+```bash
+for spec in demos/*/mcp-spec.json; do
+  timeout 4s ./mcp-template-server -spec "$spec" < /dev/null
+done
 ```

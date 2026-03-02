@@ -4,6 +4,8 @@ This repository is a Go MCP server designed to be driven by an AI agent.
 
 It supports a spec-driven onboarding flow so an agent can ask a human what server they want, write a JSON spec, and run this codebase as a reusable MCP template.
 
+This repo is intentionally contract-first: transports and MCP dispatch stay stable while domain behavior is configured through spec files.
+
 ## Common Use Cases
 
 - Internal service catalog assistant for onboarding and discovery.
@@ -104,8 +106,8 @@ Output style:
 ## Server Capabilities
 
 ### Tools (Default)
-- `listItems`: List available catalog item names.
-- `getItemDetails`: Get details for one catalog item (`name` required).
+- `listItems`: List lookup values with response shape `{"field":"<lookupField>","values":[...]}`.
+- `getItemDetails`: Get one item by lookup field (`name` in default config).
 
 ### Resources (Default)
 - `catalog://items`: Full catalog dataset.
@@ -115,6 +117,8 @@ Output style:
 - `itemBrief`: Prompt for generating a concise brief for a specific item.
 
 When `-spec` is provided, tool/resource/prompt names, argument names, and prompt templates come from the spec file.
+
+When `-spec` is provided, the detail lookup field is also driven by `tools[get_item_details].inputSchema.required[0]`.
 
 ## Run Locally
 
@@ -143,7 +147,7 @@ If the spec is invalid, startup fails with a validation error.
 - `schemaVersion` (currently `"v1"`)
 - `server` metadata
 - `runtime` defaults (`transportType`, optional `httpPort`, optional `requestTimeout`, optional `allowedOrigins`)
-- `items` dynamic objects (free-form fields) where each item must include the lookup key used by `get_item_details` input schema required field
+- `items` dynamic objects (free-form fields)
 - `tools` with required modes:
   - `list_items`
   - `get_item_details`
@@ -154,6 +158,13 @@ If the spec is invalid, startup fails with a validation error.
   - `item_brief`
 
 Unknown JSON fields are rejected at load time.
+
+Additional validation rules for dynamic item mode:
+- `get_item_details.inputSchema.required` must contain exactly one field.
+- That required field must exist in `get_item_details.inputSchema.properties`.
+- That required field schema must be `{"type":"string"}`.
+- Every item must include that lookup field as a non-empty string.
+- Lookup values must be unique across items.
 
 ## Development
 
@@ -176,6 +187,39 @@ docker run --rm -p 8080:8080 \
   -v "$(pwd)/mcp-spec.example.json:/root/mcp-spec.example.json:ro" \
   mcp-template-server:local \
   ./mcp-template-server --transport http --port 8080 --spec /root/mcp-spec.example.json
+```
+
+## Demo Validation
+
+Local smoke test for all demo specs:
+
+```bash
+go build -o mcp-template-server ./cmd/mcpserver
+for spec in demos/*/mcp-spec.json; do
+  timeout 4s ./mcp-template-server -spec "$spec" < /dev/null
+done
+```
+
+Docker smoke test for all demo specs:
+
+```bash
+docker build -t mcp-template-server:local .
+base=39300
+i=0
+for spec in demos/*/mcp-spec.json; do
+  name=$(basename "$(dirname "$spec")")
+  port=$((base+i))
+  cname="demo-${name//[^a-zA-Z0-9]/-}-docker"
+  docker rm -f "$cname" >/dev/null 2>&1 || true
+  docker run -d --name "$cname" -p "$port:8080" \
+    -v "$(pwd)/$spec:/root/spec.json:ro" \
+    mcp-template-server:local \
+    ./mcp-template-server --transport http --port 8080 --spec /root/spec.json
+  sleep 1
+  curl -fsS "http://127.0.0.1:$port/health"
+  docker rm -f "$cname" >/dev/null
+  i=$((i+1))
+done
 ```
 
 ## HTTP Endpoints

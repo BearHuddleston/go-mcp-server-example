@@ -26,7 +26,11 @@ Do not use for unrelated application feature development.
 - Start server with default catalog or `--spec` file.
 - Discover capabilities via `tools/list`, `resources/list`, `prompts/list`.
 - Use list-style capability before details-style capability.
+- Treat list response as lookup metadata: `{"field":"<lookupField>","values":[...]}`.
 - Include at least one concrete data point from tool/resource output in recommendations.
+
+Dynamic schema rule:
+- `get_item_details.inputSchema.required[0]` is the lookup field and must match item keys.
 
 ## Implementation
 
