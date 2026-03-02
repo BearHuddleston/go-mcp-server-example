@@ -5,10 +5,10 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/BearHuddleston/mcp-server-example/pkg/config"
-	"github.com/BearHuddleston/mcp-server-example/pkg/handlers"
-	"github.com/BearHuddleston/mcp-server-example/pkg/mcp"
-	"github.com/BearHuddleston/mcp-server-example/pkg/spec"
+	"github.com/BearHuddleston/mcp-server-template/pkg/config"
+	"github.com/BearHuddleston/mcp-server-template/pkg/handlers"
+	"github.com/BearHuddleston/mcp-server-template/pkg/mcp"
+	"github.com/BearHuddleston/mcp-server-template/pkg/spec"
 )
 
 type testToolHandler struct {

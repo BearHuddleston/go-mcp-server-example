@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/BearHuddleston/mcp-server-example/pkg/mcp"
+	"github.com/BearHuddleston/mcp-server-template/pkg/mcp"
 )
 
 func TestLoadFile(t *testing.T) {

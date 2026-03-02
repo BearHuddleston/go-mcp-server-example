@@ -5,8 +5,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/BearHuddleston/mcp-server-example/pkg/mcp"
-	"github.com/BearHuddleston/mcp-server-example/pkg/spec"
+	"github.com/BearHuddleston/mcp-server-template/pkg/mcp"
+	"github.com/BearHuddleston/mcp-server-template/pkg/spec"
 )
 
 func TestCatalogHandler(t *testing.T) {

@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/BearHuddleston/mcp-server-example/pkg/config"
-	"github.com/BearHuddleston/mcp-server-example/pkg/transport"
+	"github.com/BearHuddleston/mcp-server-template/pkg/config"
+	"github.com/BearHuddleston/mcp-server-template/pkg/transport"
 )
 
 func TestCreateTransport(t *testing.T) {

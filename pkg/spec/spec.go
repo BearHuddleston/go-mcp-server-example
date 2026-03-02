@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/BearHuddleston/mcp-server-example/pkg/mcp"
+	"github.com/BearHuddleston/mcp-server-template/pkg/mcp"
 )
 
 var toolNamePattern = regexp.MustCompile(`^[A-Za-z0-9_.-]{1,128}$`)

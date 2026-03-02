@@ -10,11 +10,11 @@ import (
 	"strings"
 	"syscall"
 
-	"github.com/BearHuddleston/mcp-server-example/internal/server"
-	"github.com/BearHuddleston/mcp-server-example/pkg/config"
-	"github.com/BearHuddleston/mcp-server-example/pkg/handlers"
-	"github.com/BearHuddleston/mcp-server-example/pkg/spec"
-	"github.com/BearHuddleston/mcp-server-example/pkg/transport"
+	"github.com/BearHuddleston/mcp-server-template/internal/server"
+	"github.com/BearHuddleston/mcp-server-template/pkg/config"
+	"github.com/BearHuddleston/mcp-server-template/pkg/handlers"
+	"github.com/BearHuddleston/mcp-server-template/pkg/spec"
+	"github.com/BearHuddleston/mcp-server-template/pkg/transport"
 )
 
 var (

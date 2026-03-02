@@ -5,8 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/BearHuddleston/mcp-server-example/pkg/mcp"
-	"github.com/BearHuddleston/mcp-server-example/pkg/spec"
+	"github.com/BearHuddleston/mcp-server-template/pkg/mcp"
+	"github.com/BearHuddleston/mcp-server-template/pkg/spec"
 )
 
 type Item struct {

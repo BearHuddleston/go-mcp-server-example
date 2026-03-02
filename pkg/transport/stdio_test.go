@@ -10,8 +10,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/BearHuddleston/mcp-server-example/pkg/config"
-	"github.com/BearHuddleston/mcp-server-example/pkg/mcp"
+	"github.com/BearHuddleston/mcp-server-template/pkg/config"
+	"github.com/BearHuddleston/mcp-server-template/pkg/mcp"
 )
 
 type mockServer struct{}

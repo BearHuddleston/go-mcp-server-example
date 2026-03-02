@@ -4,7 +4,7 @@ package transport
 import (
 	"context"
 
-	"github.com/BearHuddleston/mcp-server-example/pkg/mcp"
+	"github.com/BearHuddleston/mcp-server-template/pkg/mcp"
 )
 
 // Transport defines the interface for MCP transport mechanisms.

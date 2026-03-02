@@ -21,8 +21,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/BearHuddleston/mcp-server-example/pkg/config"
-	"github.com/BearHuddleston/mcp-server-example/pkg/mcp"
+	"github.com/BearHuddleston/mcp-server-template/pkg/config"
+	"github.com/BearHuddleston/mcp-server-template/pkg/mcp"
 )
 
 // HTTPTransport implements Transport for HTTP with SSE support

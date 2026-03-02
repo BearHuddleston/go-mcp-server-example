@@ -5,8 +5,8 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/BearHuddleston/mcp-server-example/pkg/config"
-	"github.com/BearHuddleston/mcp-server-example/pkg/mcp"
+	"github.com/BearHuddleston/mcp-server-template/pkg/config"
+	"github.com/BearHuddleston/mcp-server-template/pkg/mcp"
 )
 
 // Server implements the core MCP server logic
