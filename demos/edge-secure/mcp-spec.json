@@ -15,22 +15,22 @@
   },
   "items": [
     {
-      "name": "Secrets Rotation Checklist",
-      "price": 2,
-      "category": "security",
-      "description": "Checklist for rotating credentials and validating downstream integrations."
+      "profile_name": "Secrets Rotation Checklist",
+      "control_family": "credentials",
+      "risk_level": "medium",
+      "summary": "Checklist for rotating credentials and validating downstream integrations."
     },
     {
-      "name": "Service Hardening Baseline",
-      "price": 3,
-      "category": "security",
-      "description": "Baseline controls for auth, encryption, and runtime permissions."
+      "profile_name": "Service Hardening Baseline",
+      "control_family": "runtime-hardening",
+      "risk_level": "high",
+      "summary": "Baseline controls for auth, encryption, and runtime permissions."
     },
     {
-      "name": "Deployment Gate Policy",
-      "price": 2,
-      "category": "compliance",
-      "description": "Policy checks required before releasing to production environments."
+      "profile_name": "Deployment Gate Policy",
+      "control_family": "compliance",
+      "risk_level": "medium",
+      "summary": "Policy checks required before releasing to production environments."
     }
   ],
   "tools": [

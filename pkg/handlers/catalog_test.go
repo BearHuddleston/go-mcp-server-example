@@ -196,10 +196,9 @@ func TestNewCatalogFromSpec(t *testing.T) {
 		sp := &spec.Spec{
 			SchemaVersion: "v1",
 			Items: []spec.ItemSpec{{
-				Name:        "Template Bundle",
-				Price:       9,
-				Category:    "starter",
-				Description: "Template-driven MCP starter kit.",
+				"item_name": "Template Bundle",
+				"score":     9,
+				"track":     "starter",
 			}},
 			Tools: []spec.ToolSpec{
 				{
@@ -247,8 +246,19 @@ func TestNewCatalogFromSpec(t *testing.T) {
 		if err != nil {
 			t.Fatalf("ListTools failed: %v", err)
 		}
-		if len(tools) != 2 || tools[0].Name != "listCatalog" || tools[1].Name != "fetchDetails" {
+		if len(tools) != 2 {
 			t.Fatalf("unexpected tools: %+v", tools)
+		}
+		found := map[string]bool{"listCatalog": false, "fetchDetails": false}
+		for _, tool := range tools {
+			if _, ok := found[tool.Name]; ok {
+				found[tool.Name] = true
+			}
+		}
+		for name, ok := range found {
+			if !ok {
+				t.Fatalf("expected tool %q not found in %+v", name, tools)
+			}
 		}
 
 		toolResp, err := h.CallTool(ctx, mcp.ToolCallParams{Name: "fetchDetails", Arguments: map[string]any{"item_name": "Template Bundle"}})

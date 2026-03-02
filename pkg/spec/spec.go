@@ -36,12 +36,7 @@ type RuntimeSpec struct {
 	AllowedOrigins []string `json:"allowedOrigins"`
 }
 
-type ItemSpec struct {
-	Name        string `json:"name"`
-	Price       int    `json:"price"`
-	Category    string `json:"category"`
-	Description string `json:"description"`
-}
+type ItemSpec map[string]any
 
 type ToolSpec struct {
 	Mode        string          `json:"mode"`
@@ -90,22 +85,11 @@ func (s *Spec) Validate() error {
 		return fmt.Errorf("invalid schemaVersion %q, expected \"v1\"", s.SchemaVersion)
 	}
 
-	if len(s.Items) == 0 {
-		return fmt.Errorf("spec must include at least one item")
+	lookupKey, err := validateTools(s.Tools)
+	if err != nil {
+		return err
 	}
-
-	itemNames := make(map[string]struct{}, len(s.Items))
-	for _, item := range s.Items {
-		if strings.TrimSpace(item.Name) == "" {
-			return fmt.Errorf("item name cannot be empty")
-		}
-		if _, ok := itemNames[item.Name]; ok {
-			return fmt.Errorf("duplicate item name %q", item.Name)
-		}
-		itemNames[item.Name] = struct{}{}
-	}
-
-	if err := validateTools(s.Tools); err != nil {
+	if err := validateItems(s.Items, lookupKey); err != nil {
 		return err
 	}
 	if err := validateResources(s.Resources); err != nil {
@@ -121,47 +105,116 @@ func (s *Spec) Validate() error {
 	return nil
 }
 
-func validateTools(tools []ToolSpec) error {
+func validateTools(tools []ToolSpec) (string, error) {
 	if len(tools) == 0 {
-		return fmt.Errorf("spec must include tool definitions")
+		return "", fmt.Errorf("spec must include tool definitions")
 	}
 
 	validModes := []string{"list_items", "get_item_details"}
 	modeSeen := make(map[string]struct{}, len(validModes))
 	nameSeen := make(map[string]struct{}, len(tools))
+	lookupKey := ""
 
 	for _, tool := range tools {
 		if !slices.Contains(validModes, tool.Mode) {
-			return fmt.Errorf("invalid tool mode %q", tool.Mode)
+			return "", fmt.Errorf("invalid tool mode %q", tool.Mode)
 		}
 		if _, ok := modeSeen[tool.Mode]; ok {
-			return fmt.Errorf("duplicate tool mode %q", tool.Mode)
+			return "", fmt.Errorf("duplicate tool mode %q", tool.Mode)
 		}
 		modeSeen[tool.Mode] = struct{}{}
 
 		if !toolNamePattern.MatchString(tool.Name) {
-			return fmt.Errorf("invalid tool name %q", tool.Name)
+			return "", fmt.Errorf("invalid tool name %q", tool.Name)
 		}
 		if _, ok := nameSeen[tool.Name]; ok {
-			return fmt.Errorf("duplicate tool name %q", tool.Name)
+			return "", fmt.Errorf("duplicate tool name %q", tool.Name)
 		}
 		nameSeen[tool.Name] = struct{}{}
 
 		if strings.TrimSpace(tool.Description) == "" {
-			return fmt.Errorf("tool %q description cannot be empty", tool.Name)
+			return "", fmt.Errorf("tool %q description cannot be empty", tool.Name)
 		}
 		if strings.TrimSpace(tool.InputSchema.Type) == "" {
-			return fmt.Errorf("tool %q inputSchema.type cannot be empty", tool.Name)
+			return "", fmt.Errorf("tool %q inputSchema.type cannot be empty", tool.Name)
+		}
+		if tool.Mode == "get_item_details" {
+			if len(tool.InputSchema.Required) != 1 || strings.TrimSpace(tool.InputSchema.Required[0]) == "" {
+				return "", fmt.Errorf("tool %q must define exactly one required lookup field", tool.Name)
+			}
+			lookupKey = strings.TrimSpace(tool.InputSchema.Required[0])
+
+			prop, ok := tool.InputSchema.Properties[lookupKey]
+			if !ok {
+				return "", fmt.Errorf("tool %q required lookup field %q must exist in inputSchema.properties", tool.Name, lookupKey)
+			}
+
+			propType, ok := schemaType(prop)
+			if !ok || strings.TrimSpace(propType) != "string" {
+				return "", fmt.Errorf("tool %q lookup field %q schema type must be string", tool.Name, lookupKey)
+			}
 		}
 	}
 
 	for _, mode := range validModes {
 		if _, ok := modeSeen[mode]; !ok {
-			return fmt.Errorf("missing required tool mode %q", mode)
+			return "", fmt.Errorf("missing required tool mode %q", mode)
 		}
+	}
+	if lookupKey == "" {
+		return "", fmt.Errorf("missing lookup field in get_item_details tool definition")
+	}
+
+	return lookupKey, nil
+}
+
+func validateItems(items []ItemSpec, lookupKey string) error {
+	if len(items) == 0 {
+		return fmt.Errorf("spec must include at least one item")
+	}
+
+	seen := make(map[string]struct{}, len(items))
+	for i, item := range items {
+		if len(item) == 0 {
+			return fmt.Errorf("item at index %d cannot be empty", i)
+		}
+
+		lookupValue, ok := item[lookupKey]
+		if !ok {
+			return fmt.Errorf("item at index %d missing lookup field %q", i, lookupKey)
+		}
+
+		lookupString, ok := lookupValue.(string)
+		if !ok || strings.TrimSpace(lookupString) == "" {
+			return fmt.Errorf("item at index %d field %q must be a non-empty string", i, lookupKey)
+		}
+
+		if _, exists := seen[lookupString]; exists {
+			return fmt.Errorf("duplicate item lookup value %q for field %q", lookupString, lookupKey)
+		}
+		seen[lookupString] = struct{}{}
 	}
 
 	return nil
+}
+
+func schemaType(schema any) (string, bool) {
+	switch typed := schema.(type) {
+	case map[string]any:
+		value, ok := typed["type"].(string)
+		if !ok {
+			return "", false
+		}
+		return value, true
+	case map[string]string:
+		value, ok := typed["type"]
+		if !ok {
+			return "", false
+		}
+		return value, true
+	default:
+		return "", false
+	}
 }
 
 func validateResources(resources []ResourceSpec) error {

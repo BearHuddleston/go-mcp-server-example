@@ -15,22 +15,22 @@
   },
   "items": [
     {
-      "name": "API Latency Spike",
-      "price": 4,
-      "category": "incident",
-      "description": "Runbook for diagnosing latency regressions across service dependencies."
+      "incident_name": "API Latency Spike",
+      "severity_profile": "sev2",
+      "service_scope": "api-gateway",
+      "summary": "Runbook for diagnosing latency regressions across service dependencies."
     },
     {
-      "name": "Database Connection Saturation",
-      "price": 5,
-      "category": "incident",
-      "description": "Runbook for pool exhaustion, lock contention, and failover choices."
+      "incident_name": "Database Connection Saturation",
+      "severity_profile": "sev1",
+      "service_scope": "primary-database",
+      "summary": "Runbook for pool exhaustion, lock contention, and failover choices."
     },
     {
-      "name": "Queue Backlog Growth",
-      "price": 3,
-      "category": "incident",
-      "description": "Runbook for consumer lag, dead-letter spikes, and throughput recovery."
+      "incident_name": "Queue Backlog Growth",
+      "severity_profile": "sev2",
+      "service_scope": "event-consumers",
+      "summary": "Runbook for consumer lag, dead-letter spikes, and throughput recovery."
     }
   ],
   "tools": [

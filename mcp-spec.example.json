@@ -16,21 +16,21 @@
   "items": [
     {
       "name": "Workspace Automation Pack",
-      "price": 5,
-      "category": "automation",
-      "description": "A starter package for automating repetitive engineering tasks."
+      "cost": 5,
+      "domain": "automation",
+      "summary": "A starter package for automating repetitive engineering tasks."
     },
     {
       "name": "Incident Triage Guide",
-      "price": 6,
-      "category": "operations",
-      "description": "A practical guide for diagnosing and resolving production incidents."
+      "cost": 6,
+      "domain": "operations",
+      "summary": "A practical guide for diagnosing and resolving production incidents."
     },
     {
       "name": "Performance Review Bundle",
-      "price": 7,
-      "category": "analysis",
-      "description": "A toolkit for profiling, benchmarking, and optimization planning."
+      "cost": 7,
+      "domain": "analysis",
+      "summary": "A toolkit for profiling, benchmarking, and optimization planning."
     }
   ],
   "tools": [

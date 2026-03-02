@@ -143,7 +143,7 @@ If the spec is invalid, startup fails with a validation error.
 - `schemaVersion` (currently `"v1"`)
 - `server` metadata
 - `runtime` defaults (`transportType`, optional `httpPort`, optional `requestTimeout`, optional `allowedOrigins`)
-- `items` catalog entries
+- `items` dynamic objects (free-form fields) where each item must include the lookup key used by `get_item_details` input schema required field
 - `tools` with required modes:
   - `list_items`
   - `get_item_details`

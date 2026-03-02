@@ -10,22 +10,22 @@
   },
   "items": [
     {
-      "name": "Cost Optimization Playbook",
-      "price": 3,
-      "category": "finops",
-      "description": "Step-by-step approach for cloud spend reduction and rightsizing."
+      "playbook_name": "Cost Optimization Playbook",
+      "effort_level": "medium",
+      "focus_area": "finops",
+      "summary": "Step-by-step approach for cloud spend reduction and rightsizing."
     },
     {
-      "name": "Reliability Upgrade Playbook",
-      "price": 5,
-      "category": "reliability",
-      "description": "Roadmap for improving SLOs, incident response, and resilience."
+      "playbook_name": "Reliability Upgrade Playbook",
+      "effort_level": "high",
+      "focus_area": "reliability",
+      "summary": "Roadmap for improving SLOs, incident response, and resilience."
     },
     {
-      "name": "Delivery Acceleration Playbook",
-      "price": 4,
-      "category": "delivery",
-      "description": "Plan to reduce cycle time with CI improvements and guardrails."
+      "playbook_name": "Delivery Acceleration Playbook",
+      "effort_level": "medium",
+      "focus_area": "delivery",
+      "summary": "Plan to reduce cycle time with CI improvements and guardrails."
     }
   ],
   "tools": [

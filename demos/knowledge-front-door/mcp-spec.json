@@ -14,22 +14,22 @@
   },
   "items": [
     {
-      "name": "Engineering Handbook",
-      "price": 1,
-      "category": "docs",
-      "description": "Core standards for architecture, delivery, and code quality."
+      "source_name": "Engineering Handbook",
+      "audience": "all-engineering",
+      "format": "guide",
+      "summary": "Core standards for architecture, delivery, and code quality."
     },
     {
-      "name": "On-Call Runbooks",
-      "price": 2,
-      "category": "operations",
-      "description": "Escalation paths and incident response procedures."
+      "source_name": "On-Call Runbooks",
+      "audience": "sre-platform",
+      "format": "runbook",
+      "summary": "Escalation paths and incident response procedures."
     },
     {
-      "name": "Security Baselines",
-      "price": 2,
-      "category": "security",
-      "description": "Minimum controls for secrets, auth, and service hardening."
+      "source_name": "Security Baselines",
+      "audience": "engineering-security",
+      "format": "policy",
+      "summary": "Minimum controls for secrets, auth, and service hardening."
     }
   ],
   "tools": [

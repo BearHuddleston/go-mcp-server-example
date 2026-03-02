@@ -10,14 +10,16 @@ import (
 )
 
 type Item struct {
-	Name        string `json:"name"`
-	Price       int    `json:"price"`
-	Category    string `json:"category"`
-	Description string `json:"description"`
+	Values map[string]any
 }
 
 type Catalog struct {
 	items                []Item
+	lookupField          string
+	detailArgName        string
+	itemIndex            map[string]map[string]any
+	lookupValues         []string
+	serializedItems      []map[string]any
 	listTool             mcp.Tool
 	detailTool           mcp.Tool
 	resource             mcp.Resource
@@ -30,10 +32,12 @@ type Catalog struct {
 func NewCatalog() *Catalog {
 	return newCatalog(
 		[]Item{
-			{Name: "Workspace Automation Pack", Price: 5, Category: "automation", Description: "A starter package for automating repetitive engineering tasks."},
-			{Name: "Incident Triage Guide", Price: 6, Category: "operations", Description: "A practical guide for diagnosing and resolving production incidents."},
-			{Name: "Performance Review Bundle", Price: 7, Category: "analysis", Description: "A toolkit for profiling, benchmarking, and optimization planning."},
+			{Values: map[string]any{"name": "Workspace Automation Pack", "cost": 5, "domain": "automation", "summary": "A starter package for automating repetitive engineering tasks."}},
+			{Values: map[string]any{"name": "Incident Triage Guide", "cost": 6, "domain": "operations", "summary": "A practical guide for diagnosing and resolving production incidents."}},
+			{Values: map[string]any{"name": "Performance Review Bundle", "cost": 7, "domain": "analysis", "summary": "A toolkit for profiling, benchmarking, and optimization planning."}},
 		},
+		"name",
+		"name",
 		mcp.Tool{Name: "listItems", Description: "List all item names in the catalog", InputSchema: mcp.InputSchema{Type: "object", Properties: map[string]any{}, Required: []string{}}},
 		mcp.Tool{Name: "getItemDetails", Description: "Get detailed information for a catalog item", InputSchema: mcp.InputSchema{Type: "object", Properties: map[string]any{"name": map[string]string{"type": "string"}}, Required: []string{"name"}}},
 		mcp.Resource{URI: "catalog://items", Name: "catalog"},
@@ -42,9 +46,9 @@ func NewCatalog() *Catalog {
 		`You are a systems advisor. Recommend the best option for a team%s%s.
 
 Available catalog items:
-- Workspace Automation Pack ($5, automation)
-- Incident Triage Guide ($6, operations)
-- Performance Review Bundle ($7, analysis)
+- Workspace Automation Pack (cost: 5, domain: automation)
+- Incident Triage Guide (cost: 6, domain: operations)
+- Performance Review Bundle (cost: 7, domain: analysis)
 
 Explain your recommendation and include a short tradeoff analysis.`,
 		`Provide a concise brief for %s, including:
@@ -53,7 +57,7 @@ Explain your recommendation and include a short tradeoff analysis.`,
 3. Risks or limitations
 4. Quick start steps`,
 	)
-	}
+}
 
 func NewCatalogFromSpec(sp *spec.Spec) (*Catalog, error) {
 	if sp == nil {
@@ -82,19 +86,22 @@ func NewCatalogFromSpec(sp *spec.Spec) (*Catalog, error) {
 	if err != nil {
 		return nil, err
 	}
+	lookupField := "name"
+	if len(detailTool.InputSchema.Required) == 1 {
+		lookupField = detailTool.InputSchema.Required[0]
+	} else {
+		return nil, fmt.Errorf("detail tool %q must define exactly one required lookup field", detailTool.Name)
+	}
 
 	items := make([]Item, 0, len(sp.Items))
 	for _, item := range sp.Items {
-		items = append(items, Item{
-			Name:        item.Name,
-			Price:       item.Price,
-			Category:    item.Category,
-			Description: item.Description,
-		})
+		items = append(items, Item{Values: cloneMap(map[string]any(item))})
 	}
 
 	return newCatalog(
 		items,
+		lookupField,
+		lookupField,
 		mcp.Tool{Name: listTool.Name, Description: listTool.Description, InputSchema: listTool.InputSchema},
 		mcp.Tool{Name: detailTool.Name, Description: detailTool.Description, InputSchema: detailTool.InputSchema},
 		mcp.Resource{URI: resource.URI, Name: resource.Name},
@@ -105,9 +112,26 @@ func NewCatalogFromSpec(sp *spec.Spec) (*Catalog, error) {
 	), nil
 }
 
-func newCatalog(items []Item, listTool mcp.Tool, detailTool mcp.Tool, resource mcp.Resource, recommendationPrompt mcp.Prompt, briefPrompt mcp.Prompt, recommendationText string, briefText string) *Catalog {
+func newCatalog(items []Item, lookupField string, detailArgName string, listTool mcp.Tool, detailTool mcp.Tool, resource mcp.Resource, recommendationPrompt mcp.Prompt, briefPrompt mcp.Prompt, recommendationText string, briefText string) *Catalog {
+	itemIndex := make(map[string]map[string]any, len(items))
+	lookupValues := make([]string, 0, len(items))
+	serializedItems := make([]map[string]any, 0, len(items))
+
+	for _, item := range items {
+		if value, ok := item.Values[lookupField].(string); ok {
+			itemIndex[value] = item.Values
+			lookupValues = append(lookupValues, value)
+		}
+		serializedItems = append(serializedItems, item.Values)
+	}
+
 	return &Catalog{
 		items:                items,
+		lookupField:          lookupField,
+		detailArgName:        detailArgName,
+		itemIndex:            itemIndex,
+		lookupValues:         lookupValues,
+		serializedItems:      serializedItems,
 		listTool:             listTool,
 		detailTool:           detailTool,
 		resource:             resource,
@@ -116,6 +140,14 @@ func newCatalog(items []Item, listTool mcp.Tool, detailTool mcp.Tool, resource m
 		recommendationText:   recommendationText,
 		briefText:            briefText,
 	}
+}
+
+func cloneMap(src map[string]any) map[string]any {
+	clone := make(map[string]any, len(src))
+	for k, v := range src {
+		clone[k] = v
+	}
+	return clone
 }
 
 func toolByMode(tools []spec.ToolSpec, mode string) (*spec.ToolSpec, error) {
@@ -169,12 +201,7 @@ func (c *Catalog) listItems(ctx context.Context) mcp.ToolResponse {
 	default:
 	}
 
-	names := make([]string, 0, len(c.items))
-	for _, item := range c.items {
-		names = append(names, item.Name)
-	}
-
-	namesJSON, err := json.Marshal(map[string][]string{"names": names})
+	namesJSON, err := json.Marshal(map[string]any{"field": c.lookupField, "values": c.lookupValues})
 	if err != nil {
 		return mcp.ToolResponse{
 			Content: []mcp.ContentItem{{Type: "text", Text: fmt.Sprintf(`{"error":"failed to marshal item names: %s"}`, err.Error())}},
@@ -191,24 +218,17 @@ func (c *Catalog) getItemDetails(ctx context.Context, args map[string]any) (mcp.
 	default:
 	}
 
-	argName := "name"
-	if len(c.detailTool.InputSchema.Required) > 0 {
-		argName = c.detailTool.InputSchema.Required[0]
-	}
-
-	name, ok := args[argName].(string)
+	name, ok := args[c.detailArgName].(string)
 	if !ok {
-		return mcp.ToolResponse{}, fmt.Errorf("invalid %s parameter: expected string", argName)
+		return mcp.ToolResponse{}, fmt.Errorf("invalid %s parameter: expected string", c.detailArgName)
 	}
 
-	for _, item := range c.items {
-		if item.Name == name {
-			itemJSON, err := json.Marshal(item)
-			if err != nil {
-				return mcp.ToolResponse{}, fmt.Errorf("failed to marshal item details: %w", err)
-			}
-			return mcp.ToolResponse{Content: []mcp.ContentItem{{Type: "text", Text: string(itemJSON)}}}, nil
+	if item, ok := c.itemIndex[name]; ok {
+		itemJSON, err := json.Marshal(item)
+		if err != nil {
+			return mcp.ToolResponse{}, fmt.Errorf("failed to marshal item details: %w", err)
 		}
+		return mcp.ToolResponse{Content: []mcp.ContentItem{{Type: "text", Text: string(itemJSON)}}}, nil
 	}
 
 	return mcp.ToolResponse{}, fmt.Errorf("item not found: %s", name)
@@ -226,7 +246,7 @@ func (c *Catalog) ReadResource(ctx context.Context, params mcp.ResourceParams) (
 }
 
 func (c *Catalog) getCatalogResource() (mcp.ResourceResponse, error) {
-	itemsJSON, err := json.Marshal(c.items)
+	itemsJSON, err := json.Marshal(c.serializedItems)
 	if err != nil {
 		return mcp.ResourceResponse{}, fmt.Errorf("failed to marshal catalog: %w", err)
 	}

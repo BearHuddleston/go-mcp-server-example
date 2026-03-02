@@ -18,11 +18,11 @@ func TestLoadFile(t *testing.T) {
 		  "server": {"name": "Template MCP", "version": "1.0.0"},
 		  "runtime": {"transportType": "http", "httpPort": 8080, "requestTimeout": "30s", "allowedOrigins": ["http://localhost:3000"]},
 		  "items": [
-		    {"name": "Item A", "price": 5, "category": "starter", "description": "First item"}
+		    {"item_key": "Item A", "tier": "starter", "owner": "platform"}
 		  ],
 		  "tools": [
 		    {"mode": "list_items", "name": "listItems", "description": "List items", "inputSchema": {"type": "object", "properties": {}, "required": []}},
-		    {"mode": "get_item_details", "name": "getItemDetails", "description": "Get item details", "inputSchema": {"type": "object", "properties": {"name": {"type": "string"}}, "required": ["name"]}}
+		    {"mode": "get_item_details", "name": "getItemDetails", "description": "Get item details", "inputSchema": {"type": "object", "properties": {"item_key": {"type": "string"}}, "required": ["item_key"]}}
 		  ],
 		  "resources": [
 		    {"mode": "catalog_items", "uri": "catalog://items", "name": "catalog"}
@@ -56,10 +56,10 @@ func TestLoadFile(t *testing.T) {
 		  "schemaVersion": "v1",
 		  "server": {"name": "Template MCP", "version": "1.0.0"},
 		  "runtime": {},
-		  "items": [{"name": "Item A", "price": 5, "category": "starter", "description": "First item"}],
+		  "items": [{"item_key": "Item A", "tier": "starter", "owner": "platform"}],
 		  "tools": [
 		    {"mode": "list_items", "name": "listItems", "description": "List items", "inputSchema": {"type": "object", "properties": {}, "required": []}},
-		    {"mode": "get_item_details", "name": "getItemDetails", "description": "Get item details", "inputSchema": {"type": "object", "properties": {"name": {"type": "string"}}, "required": ["name"]}}
+		    {"mode": "get_item_details", "name": "getItemDetails", "description": "Get item details", "inputSchema": {"type": "object", "properties": {"item_key": {"type": "string"}}, "required": ["item_key"]}}
 		  ],
 		  "resources": [{"mode": "catalog_items", "uri": "catalog://items", "name": "catalog"}],
 		  "prompts": [
@@ -100,20 +100,37 @@ func TestSpecValidate(t *testing.T) {
 			t.Fatalf("expected transportType error, got %v", err)
 		}
 	})
+
+	t.Run("missing lookup property in tool schema", func(t *testing.T) {
+		sp := validSpecForValidate()
+		sp.Tools[1].InputSchema.Properties = map[string]any{}
+		err := sp.Validate()
+		if err == nil || !strings.Contains(err.Error(), "must exist in inputSchema.properties") {
+			t.Fatalf("expected lookup property error, got %v", err)
+		}
+	})
+
+	t.Run("lookup property type must be string", func(t *testing.T) {
+		sp := validSpecForValidate()
+		sp.Tools[1].InputSchema.Properties["item_key"] = map[string]any{"type": "number"}
+		err := sp.Validate()
+		if err == nil || !strings.Contains(err.Error(), "schema type must be string") {
+			t.Fatalf("expected lookup type error, got %v", err)
+		}
+	})
 }
 
 func validSpecForValidate() *Spec {
 	return &Spec{
 		SchemaVersion: "v1",
 		Items: []ItemSpec{{
-			Name:        "Item A",
-			Price:       5,
-			Category:    "starter",
-			Description: "First item",
+			"item_key": "Item A",
+			"tier":     "starter",
+			"owner":    "platform",
 		}},
 		Tools: []ToolSpec{
 			{Mode: "list_items", Name: "listItems", Description: "List items", InputSchema: mcp.InputSchema{Type: "object", Properties: map[string]any{}, Required: []string{}}},
-			{Mode: "get_item_details", Name: "getItemDetails", Description: "Get details", InputSchema: mcp.InputSchema{Type: "object", Properties: map[string]any{"name": map[string]string{"type": "string"}}, Required: []string{"name"}}},
+			{Mode: "get_item_details", Name: "getItemDetails", Description: "Get details", InputSchema: mcp.InputSchema{Type: "object", Properties: map[string]any{"item_key": map[string]string{"type": "string"}}, Required: []string{"item_key"}}},
 		},
 		Resources: []ResourceSpec{{Mode: "catalog_items", URI: "catalog://items", Name: "catalog"}},
 		Prompts: []PromptSpec{

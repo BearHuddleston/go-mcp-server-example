@@ -187,10 +187,9 @@ func TestHandleRequestToolsListWithSpecBackedCatalog(t *testing.T) {
 		SchemaVersion: "v1",
 		Runtime:       spec.RuntimeSpec{TransportType: "stdio"},
 		Items: []spec.ItemSpec{{
-			Name:        "Template Bundle",
-			Price:       9,
-			Category:    "starter",
-			Description: "Template-driven MCP starter kit.",
+			"item_name": "Template Bundle",
+			"score":     9,
+			"track":     "starter",
 		}},
 		Tools: []spec.ToolSpec{
 			{Mode: "list_items", Name: "listCatalog", Description: "List item names", InputSchema: mcp.InputSchema{Type: "object", Properties: map[string]any{}, Required: []string{}}},
@@ -232,8 +231,16 @@ func TestHandleRequestToolsListWithSpecBackedCatalog(t *testing.T) {
 	if len(toolsAny) != 2 {
 		t.Fatalf("expected 2 tools, got %d", len(toolsAny))
 	}
-	if toolsAny[0].Name != "listCatalog" || toolsAny[1].Name != "fetchDetails" {
-		t.Fatalf("expected spec-driven tool names, got %+v", toolsAny)
+	found := map[string]bool{"listCatalog": false, "fetchDetails": false}
+	for _, tool := range toolsAny {
+		if _, ok := found[tool.Name]; ok {
+			found[tool.Name] = true
+		}
+	}
+	for name, ok := range found {
+		if !ok {
+			t.Fatalf("expected tool %q not found in %+v", name, toolsAny)
+		}
 	}
 }
 

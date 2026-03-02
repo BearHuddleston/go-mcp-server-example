@@ -15,22 +15,22 @@
   },
   "items": [
     {
-      "name": "Identity Service",
-      "price": 2,
-      "category": "platform",
-      "description": "Authentication and authorization APIs for internal services."
+      "service_name": "Identity Service",
+      "tier": "core",
+      "owner_team": "platform-auth",
+      "summary": "Authentication and authorization APIs for internal services."
     },
     {
-      "name": "Event Bus",
-      "price": 3,
-      "category": "messaging",
-      "description": "Managed pub/sub backbone for asynchronous service communication."
+      "service_name": "Event Bus",
+      "tier": "core",
+      "owner_team": "platform-messaging",
+      "summary": "Managed pub/sub backbone for asynchronous service communication."
     },
     {
-      "name": "Observability Stack",
-      "price": 4,
-      "category": "operations",
-      "description": "Metrics, logs, and traces platform with SLO dashboards."
+      "service_name": "Observability Stack",
+      "tier": "critical",
+      "owner_team": "platform-observability",
+      "summary": "Metrics, logs, and traces platform with SLO dashboards."
     }
   ],
   "tools": [

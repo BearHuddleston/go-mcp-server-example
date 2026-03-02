@@ -113,11 +113,11 @@ func createTestSpecFile(t *testing.T) string {
   "server": {"name": "Template MCP", "version": "1.0.0"},
   "runtime": {"transportType": "stdio"},
   "items": [
-    {"name": "Item A", "price": 5, "category": "starter", "description": "First item"}
+    {"item_key": "Item A", "tier": "starter", "owner": "platform"}
   ],
   "tools": [
     {"mode": "list_items", "name": "listItems", "description": "List items", "inputSchema": {"type": "object", "properties": {}, "required": []}},
-    {"mode": "get_item_details", "name": "getItemDetails", "description": "Get item details", "inputSchema": {"type": "object", "properties": {"name": {"type": "string"}}, "required": ["name"]}}
+    {"mode": "get_item_details", "name": "getItemDetails", "description": "Get item details", "inputSchema": {"type": "object", "properties": {"item_key": {"type": "string"}}, "required": ["item_key"]}}
   ],
   "resources": [
     {"mode": "catalog_items", "uri": "catalog://items", "name": "catalog"}
