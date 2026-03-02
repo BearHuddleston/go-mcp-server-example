@@ -4,6 +4,26 @@ This repository is a Go MCP server designed to be driven by an AI agent.
 
 It supports a spec-driven onboarding flow so an agent can ask a human what server they want, write a JSON spec, and run this codebase as a reusable MCP template.
 
+## Common Use Cases
+
+- Internal service catalog assistant for onboarding and discovery.
+- Playbook recommender that drafts plans from budget/goal inputs.
+- Team knowledge front door exposing curated MCP resources.
+- Template for domain-specific MCP servers (HR, platform docs, incident runbooks).
+- Secure local or edge deployment with hardened Docker runtime defaults.
+
+## Demo Specs
+
+You can try prebuilt demos for these use cases under `demos/`:
+
+- `demos/service-catalog/mcp-spec.json`
+- `demos/playbook-recommender/mcp-spec.json`
+- `demos/knowledge-front-door/mcp-spec.json`
+- `demos/incident-runbook-template/mcp-spec.json`
+- `demos/edge-secure/mcp-spec.json`
+
+See `demos/README.md` for run commands.
+
 ## Quick Start
 
 ```bash
