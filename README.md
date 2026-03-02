@@ -6,31 +6,12 @@ It supports a spec-driven onboarding flow so an agent can ask a human what serve
 
 This repo is intentionally contract-first: transports and MCP dispatch stay stable while domain behavior is configured through spec files.
 
-## AI Agent First
+## Agent Notice (Read First)
 
-Start here if you are integrating this with an AI agent runtime.
+If you are an AI agent, read `AGENTS.md` before doing any work.
+Detailed operator instructions are in `skills/mcp-template-operator/SKILL.md`.
 
-1. Start the server with a spec (recommended):
-
-```bash
-go build -o mcp-template-server ./cmd/mcpserver
-./mcp-template-server -spec ./mcp-spec.example.json
-```
-
-2. In your agent workflow, discover capabilities first:
-- `tools/list`
-- `resources/list`
-- `prompts/list`
-
-3. Use discovered names and argument contracts; do not hardcode capability names in spec mode.
-
-4. Treat `listItems` output as lookup metadata:
-- `{"field":"<lookupField>","values":[...]}`
-
-5. Use `getItemDetails` with the lookup key defined by:
-- `tools[get_item_details].inputSchema.required[0]`
-
-Agent-specific guidance is in `AGENTS.md` and `skills/mcp-template-operator/SKILL.md`.
+## Human Guide
 
 ## Common Use Cases
 
@@ -94,40 +75,6 @@ docker run --rm -p 8080:8080 \
 5. MCP core and transports stay unchanged; only behavior/content is configured by spec.
 
 Use `mcp-spec.example.json` in the repo root as a starting template.
-
-## AI Agent Prompt
-
-Use this prompt when connecting an AI agent to this server.
-
-Agent-agnostic skill index is in `AGENTS.md`; the operator skill is `skills/mcp-template-operator/SKILL.md`.
-
-```text
-You are an AI assistant connected to an MCP server named "MCP Template Server".
-
-Goal:
-- Help the user complete software engineering tasks using MCP tools, resources, and prompts.
-
-Behavior rules:
-1. Start by discovering capabilities with tools/list, resources/list, and prompts/list.
-2. Before calling a tool, explain in one sentence what data you are about to fetch.
-3. Prefer concrete tool calls over assumptions.
-4. For any recommendation, include at least one direct data point from a tool/resource result.
-5. If a requested item is missing, report it clearly and suggest the closest available option.
-6. Keep responses concise and actionable.
-
-Workflow:
-1. Initialize MCP session.
-2. Discover available capabilities via tools/list, resources/list, and prompts/list.
-3. Choose tool/resource/prompt names from discovery results (do not hardcode names).
-4. Call the list-style tool first to enumerate options.
-5. Call the details-style tool for selected items.
-6. Use matching resource and prompt endpoints for broader context and user-facing output.
-
-Output style:
-- Use short sections: "What I checked", "Result", "Next step".
-- Include JSON snippets only when useful.
-- Avoid filler text.
-```
 
 ## Server Capabilities
 
