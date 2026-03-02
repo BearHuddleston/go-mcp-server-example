@@ -6,6 +6,32 @@ It supports a spec-driven onboarding flow so an agent can ask a human what serve
 
 This repo is intentionally contract-first: transports and MCP dispatch stay stable while domain behavior is configured through spec files.
 
+## AI Agent First
+
+Start here if you are integrating this with an AI agent runtime.
+
+1. Start the server with a spec (recommended):
+
+```bash
+go build -o mcp-template-server ./cmd/mcpserver
+./mcp-template-server -spec ./mcp-spec.example.json
+```
+
+2. In your agent workflow, discover capabilities first:
+- `tools/list`
+- `resources/list`
+- `prompts/list`
+
+3. Use discovered names and argument contracts; do not hardcode capability names in spec mode.
+
+4. Treat `listItems` output as lookup metadata:
+- `{"field":"<lookupField>","values":[...]}`
+
+5. Use `getItemDetails` with the lookup key defined by:
+- `tools[get_item_details].inputSchema.required[0]`
+
+Agent-specific guidance is in `AGENTS.md` and `skills/mcp-template-operator/SKILL.md`.
+
 ## Common Use Cases
 
 - Internal service catalog assistant for onboarding and discovery.
