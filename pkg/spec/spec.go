@@ -157,10 +157,8 @@ func validateTools(tools []ToolSpec) (string, error) {
 		}
 	}
 
-	for _, mode := range validModes {
-		if _, ok := modeSeen[mode]; !ok {
-			return "", fmt.Errorf("missing required tool mode %q", mode)
-		}
+	if err := ensureRequiredModes(modeSeen, validModes, "tool"); err != nil {
+		return "", err
 	}
 	if lookupKey == "" {
 		return "", fmt.Errorf("missing lookup field in get_item_details tool definition")
@@ -249,10 +247,8 @@ func validateResources(resources []ResourceSpec) error {
 		}
 	}
 
-	for _, mode := range validModes {
-		if _, ok := modeSeen[mode]; !ok {
-			return fmt.Errorf("missing required resource mode %q", mode)
-		}
+	if err := ensureRequiredModes(modeSeen, validModes, "resource"); err != nil {
+		return err
 	}
 
 	return nil
@@ -292,9 +288,17 @@ func validatePrompts(prompts []PromptSpec) error {
 		}
 	}
 
+	if err := ensureRequiredModes(modeSeen, validModes, "prompt"); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func ensureRequiredModes(modeSeen map[string]struct{}, validModes []string, kind string) error {
 	for _, mode := range validModes {
 		if _, ok := modeSeen[mode]; !ok {
-			return fmt.Errorf("missing required prompt mode %q", mode)
+			return fmt.Errorf("missing required %s mode %q", kind, mode)
 		}
 	}
 

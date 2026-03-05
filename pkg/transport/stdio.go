@@ -14,6 +14,8 @@ import (
 	"github.com/BearHuddleston/mcp-server-template/pkg/mcp"
 )
 
+const maxStdioMessageBytes = 4 * 1024 * 1024
+
 // Stdio implements the stdio transport for MCP
 type Stdio struct {
 	config     *config.Config
@@ -32,7 +34,9 @@ func NewStdio(cfg *config.Config) *Stdio {
 		input:  os.Stdin,
 		output: os.Stdout,
 		newScanner: func(r io.Reader) *bufio.Scanner {
-			return bufio.NewScanner(r)
+			scanner := bufio.NewScanner(r)
+			scanner.Buffer(make([]byte, 0, 64*1024), maxStdioMessageBytes)
+			return scanner
 		},
 	}
 }
@@ -153,7 +157,10 @@ func (t *Stdio) sendParseError(line string, err error) error {
 		return errors.Join(err, marshErr)
 	}
 
-	if _, writeErr := fmt.Fprintln(t.output, string(respBytes)); writeErr != nil {
+	if _, writeErr := t.output.Write(respBytes); writeErr != nil {
+		return errors.Join(err, writeErr)
+	}
+	if _, writeErr := t.output.Write([]byte("\n")); writeErr != nil {
 		return errors.Join(err, writeErr)
 	}
 	return nil
@@ -176,7 +183,11 @@ func (s *StdoutSender) SendResponse(response mcp.Response) error {
 	if err != nil {
 		return fmt.Errorf("failed to marshal response: %w", err)
 	}
-	if _, err := fmt.Fprintln(s.resolveWriter(), string(jsonBytes)); err != nil {
+	writer := s.resolveWriter()
+	if _, err := writer.Write(jsonBytes); err != nil {
+		return fmt.Errorf("failed to write response: %w", err)
+	}
+	if _, err := writer.Write([]byte("\n")); err != nil {
 		return fmt.Errorf("failed to write response: %w", err)
 	}
 	return nil

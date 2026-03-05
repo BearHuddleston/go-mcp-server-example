@@ -234,12 +234,12 @@ func (t *HTTPTransport) handlePost(ctx context.Context, server mcp.Server, w htt
 		return
 	}
 
-	trimmed := strings.TrimSpace(string(raw))
-	if trimmed == "" {
+	trimmed := bytes.TrimSpace(raw)
+	if len(trimmed) == 0 {
 		t.sendErrorWithStatus(w, -1, mcp.ErrorCodeInvalidRequest, "Request body cannot be empty", nil, http.StatusBadRequest)
 		return
 	}
-	if strings.HasPrefix(trimmed, "[") {
+	if trimmed[0] == '[' {
 		t.sendErrorWithStatus(w, -1, mcp.ErrorCodeInvalidRequest, "Batch requests are not supported", nil, http.StatusBadRequest)
 		return
 	}
@@ -372,25 +372,32 @@ const (
 )
 
 func classifyJSONRPCMessage(raw json.RawMessage) (messageKind, mcp.Request, any, error) {
-	var obj map[string]json.RawMessage
-	if err := json.Unmarshal(raw, &obj); err != nil {
+	type envelope struct {
+		JSONRPC string           `json:"jsonrpc"`
+		ID      *json.RawMessage `json:"id"`
+		Method  *string          `json:"method"`
+		Params  any              `json:"params"`
+		Result  *json.RawMessage `json:"result"`
+		Error   *json.RawMessage `json:"error"`
+	}
+
+	var env envelope
+	if err := json.Unmarshal(raw, &env); err != nil {
 		return messageKindInvalid, mcp.Request{}, nil, err
 	}
 
-	methodRaw, hasMethod := obj["method"]
-	hasMethod = hasMethod && rawMessagePresent(methodRaw)
-	hasResult := rawMessagePresent(obj["result"])
-	hasError := rawMessagePresent(obj["error"])
+	hasMethod := env.Method != nil && strings.TrimSpace(*env.Method) != ""
+	hasResult := rawMessagePtrPresent(env.Result)
+	hasError := rawMessagePtrPresent(env.Error)
 
-	id, hasID := extractID(obj)
+	id, hasID := extractID(env.ID)
 
 	if hasMethod {
-		var req mcp.Request
-		if err := json.Unmarshal(raw, &req); err != nil {
-			return messageKindInvalid, mcp.Request{}, nil, err
-		}
-		if strings.TrimSpace(req.Method) == "" {
-			return messageKindInvalid, req, id, nil
+		req := mcp.Request{
+			JSONRPC: env.JSONRPC,
+			ID:      id,
+			Method:  strings.TrimSpace(*env.Method),
+			Params:  env.Params,
 		}
 		if req.ID == nil {
 			return messageKindNotification, req, id, nil
@@ -399,34 +406,19 @@ func classifyJSONRPCMessage(raw json.RawMessage) (messageKind, mcp.Request, any,
 	}
 
 	if (hasResult || hasError) && hasID && id != nil {
-		return messageKindResponse, mcp.Request{JSONRPC: extractJSONString(obj, "jsonrpc")}, id, nil
+		return messageKindResponse, mcp.Request{JSONRPC: strings.TrimSpace(env.JSONRPC)}, id, nil
 	}
 
-	return messageKindInvalid, mcp.Request{JSONRPC: extractJSONString(obj, "jsonrpc")}, id, nil
+	return messageKindInvalid, mcp.Request{JSONRPC: strings.TrimSpace(env.JSONRPC)}, id, nil
 }
 
-func extractJSONString(obj map[string]json.RawMessage, key string) string {
-	raw, ok := obj[key]
-	if !ok || !rawMessagePresent(raw) {
-		return ""
-	}
-
-	var value string
-	if err := json.Unmarshal(raw, &value); err != nil {
-		return ""
-	}
-
-	return strings.TrimSpace(value)
-}
-
-func extractID(obj map[string]json.RawMessage) (any, bool) {
-	idRaw, ok := obj["id"]
-	if !ok {
+func extractID(idRaw *json.RawMessage) (any, bool) {
+	if idRaw == nil {
 		return nil, false
 	}
 
 	var id any
-	if err := json.Unmarshal(idRaw, &id); err != nil {
+	if err := json.Unmarshal(*idRaw, &id); err != nil {
 		return nil, true
 	}
 
@@ -436,6 +428,13 @@ func extractID(obj map[string]json.RawMessage) (any, bool) {
 func rawMessagePresent(raw json.RawMessage) bool {
 	raw = bytes.TrimSpace(raw)
 	return len(raw) != 0
+}
+
+func rawMessagePtrPresent(raw *json.RawMessage) bool {
+	if raw == nil {
+		return false
+	}
+	return rawMessagePresent(*raw)
 }
 
 func parseAcceptTypes(accept string) (bool, bool) {
