@@ -18,8 +18,11 @@ type Catalog struct {
 	lookupField          string
 	detailArgName        string
 	itemIndex            map[string]map[string]any
+	itemDetailText       map[string]string
 	lookupValues         []string
 	serializedItems      []map[string]any
+	listItemsText        string
+	resourceText         string
 	listTool             mcp.Tool
 	detailTool           mcp.Tool
 	resource             mcp.Resource
@@ -62,6 +65,9 @@ Explain your recommendation and include a short tradeoff analysis.`,
 func NewCatalogFromSpec(sp *spec.Spec) (*Catalog, error) {
 	if sp == nil {
 		return nil, fmt.Errorf("spec cannot be nil")
+	}
+	if err := sp.Validate(); err != nil {
+		return nil, fmt.Errorf("spec validation failed: %w", err)
 	}
 
 	listTool, err := toolByMode(sp.Tools, "list_items")
@@ -114,15 +120,29 @@ func NewCatalogFromSpec(sp *spec.Spec) (*Catalog, error) {
 
 func newCatalog(items []Item, lookupField string, detailArgName string, listTool mcp.Tool, detailTool mcp.Tool, resource mcp.Resource, recommendationPrompt mcp.Prompt, briefPrompt mcp.Prompt, recommendationText string, briefText string) *Catalog {
 	itemIndex := make(map[string]map[string]any, len(items))
+	itemDetailText := make(map[string]string, len(items))
 	lookupValues := make([]string, 0, len(items))
 	serializedItems := make([]map[string]any, 0, len(items))
 
 	for _, item := range items {
 		if value, ok := item.Values[lookupField].(string); ok {
 			itemIndex[value] = item.Values
+			if detailJSON, err := json.Marshal(item.Values); err == nil {
+				itemDetailText[value] = string(detailJSON)
+			}
 			lookupValues = append(lookupValues, value)
 		}
 		serializedItems = append(serializedItems, item.Values)
+	}
+
+	listItemsText := ""
+	if listJSON, err := json.Marshal(map[string]any{"field": lookupField, "values": lookupValues}); err == nil {
+		listItemsText = string(listJSON)
+	}
+
+	resourceText := ""
+	if resourceJSON, err := json.Marshal(serializedItems); err == nil {
+		resourceText = string(resourceJSON)
 	}
 
 	return &Catalog{
@@ -130,8 +150,11 @@ func newCatalog(items []Item, lookupField string, detailArgName string, listTool
 		lookupField:          lookupField,
 		detailArgName:        detailArgName,
 		itemIndex:            itemIndex,
+		itemDetailText:       itemDetailText,
 		lookupValues:         lookupValues,
 		serializedItems:      serializedItems,
+		listItemsText:        listItemsText,
+		resourceText:         resourceText,
 		listTool:             listTool,
 		detailTool:           detailTool,
 		resource:             resource,
@@ -201,6 +224,10 @@ func (c *Catalog) listItems(ctx context.Context) mcp.ToolResponse {
 	default:
 	}
 
+	if c.listItemsText != "" {
+		return mcp.ToolResponse{Content: []mcp.ContentItem{{Type: "text", Text: c.listItemsText}}}
+	}
+
 	namesJSON, err := json.Marshal(map[string]any{"field": c.lookupField, "values": c.lookupValues})
 	if err != nil {
 		return mcp.ToolResponse{
@@ -221,6 +248,10 @@ func (c *Catalog) getItemDetails(ctx context.Context, args map[string]any) (mcp.
 	name, ok := args[c.detailArgName].(string)
 	if !ok {
 		return mcp.ToolResponse{}, fmt.Errorf("invalid %s parameter: expected string", c.detailArgName)
+	}
+
+	if itemText, ok := c.itemDetailText[name]; ok {
+		return mcp.ToolResponse{Content: []mcp.ContentItem{{Type: "text", Text: itemText}}}, nil
 	}
 
 	if item, ok := c.itemIndex[name]; ok {
@@ -246,10 +277,15 @@ func (c *Catalog) ReadResource(ctx context.Context, params mcp.ResourceParams) (
 }
 
 func (c *Catalog) getCatalogResource() (mcp.ResourceResponse, error) {
+	if c.resourceText != "" {
+		return mcp.ResourceResponse{Contents: []mcp.ResourceContent{{URI: c.resource.URI, Text: c.resourceText}}}, nil
+	}
+
 	itemsJSON, err := json.Marshal(c.serializedItems)
 	if err != nil {
 		return mcp.ResourceResponse{}, fmt.Errorf("failed to marshal catalog: %w", err)
 	}
+
 	return mcp.ResourceResponse{Contents: []mcp.ResourceContent{{URI: c.resource.URI, Text: string(itemsJSON)}}}, nil
 }
 

@@ -262,12 +262,11 @@ func requiredStringParam(paramsMap map[string]any, key string) (string, error) {
 }
 
 func optionalArguments(paramsMap map[string]any) map[string]any {
-	args := make(map[string]any)
 	if arguments, exists := paramsMap["arguments"]; exists {
 		if argsMap, ok := arguments.(map[string]any); ok {
-			args = argsMap
+			return argsMap
 		}
 	}
 
-	return args
+	return nil
 }

@@ -1,6 +1,7 @@
 package spec
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -65,7 +66,7 @@ func LoadFile(path string) (*Spec, error) {
 		return nil, fmt.Errorf("read spec file: %w", err)
 	}
 
-	decoder := json.NewDecoder(strings.NewReader(string(content)))
+	decoder := json.NewDecoder(bytes.NewReader(content))
 	decoder.DisallowUnknownFields()
 
 	var sp Spec
